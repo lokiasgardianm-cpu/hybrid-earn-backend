@@ -44,7 +44,7 @@ bot.start(async (ctx) => {
       // Referral bonus
       if (refId && refId !== telegramId) {
         await pool.query(
-          "UPDATE users SET balance = balance + 200, referrals = referrals + 1 WHERE telegram_id=$1",
+          "UPDATE users SET balance = balance + 1000, referrals = referrals + 1 WHERE telegram_id=$1",
           [refId]
         );
       }
