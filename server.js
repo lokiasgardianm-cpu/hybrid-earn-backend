@@ -37,9 +37,15 @@ bot.start(async (ctx) => {
     if (userCheck.rows.length === 0) {
 
       await pool.query(
-        "INSERT INTO users (telegram_id, username, balance, referrals, referred_by) VALUES ($1,$2,0,0,$3)",
-        [telegramId, username, refId && refId !== telegramId ? refId : null]
+        "INSERT INTO users (telegram_id, username, balance, referrals, referred_by) VALUES ($1,$2,$3,0,$4)",
+        [
+          telegramId,
+          username,
+          200, // New user join bonus
+          refId && refId !== telegramId ? refId : null
+        ]
       );
+
 
       // Referral bonus
       if (refId && refId !== telegramId) {
