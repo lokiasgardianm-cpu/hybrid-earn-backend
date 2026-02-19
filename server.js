@@ -130,7 +130,7 @@ function verifyTelegramWebApp(initData) {
 
 
 function verifyTelegramUser(req, res, next) {
-  const { initData } = req.body;
+  const initData = req.body.initData || req.headers["x-telegram-init-data"];
 
   if (!initData) {
     return res.status(401).json({ error: "No initData provided" });
@@ -169,45 +169,45 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
 
 
     // ===== ANTI-CHEAT START =====
-const now = Date.now();
+    const now = Date.now();
 
-if (!tapTracker.has(telegramId)) {
-  tapTracker.set(telegramId, {
-    lastTap: now,
-    tapCount: 1,
-    firstTapTime: now
-  });
-} else {
-  const data = tapTracker.get(telegramId);
+    if (!tapTracker.has(telegramId)) {
+      tapTracker.set(telegramId, {
+        lastTap: now,
+        tapCount: 1,
+        firstTapTime: now
+      });
+    } else {
+      const data = tapTracker.get(telegramId);
 
-  // Minimum interval 250ms
-  if (now - data.lastTap < 250) {
-    return res.status(429).json({
-      success: false,
-      message: "Too fast"
-    });
-  }
+      // Minimum interval 250ms
+      if (now - data.lastTap < 250) {
+        return res.status(429).json({
+          success: false,
+          message: "Too fast"
+        });
+      }
 
-  // Reset counter every 1 second
-  if (now - data.firstTapTime > 1000) {
-    data.tapCount = 0;
-    data.firstTapTime = now;
-  }
+      // Reset counter every 1 second
+      if (now - data.firstTapTime > 1000) {
+        data.tapCount = 0;
+        data.firstTapTime = now;
+      }
 
-  data.tapCount++;
+      data.tapCount++;
 
-  // Max 5 taps per second
-  if (data.tapCount > 5) {
-    return res.status(429).json({
-      success: false,
-      message: "Tap limit exceeded"
-    });
-  }
+      // Max 5 taps per second
+      if (data.tapCount > 5) {
+        return res.status(429).json({
+          success: false,
+          message: "Tap limit exceeded"
+        });
+      }
 
-  data.lastTap = now;
-  tapTracker.set(telegramId, data);
-}
-// ===== ANTI-CHEAT END =====
+      data.lastTap = now;
+      tapTracker.set(telegramId, data);
+    }
+    // ===== ANTI-CHEAT END =====
 
 
 
@@ -263,11 +263,17 @@ if (!tapTracker.has(telegramId)) {
 
 
 // ===== GET USER DATA =====
-app.get("/user/:id", async (req, res) => {
+app.get("/user/:id", verifyTelegramUser, async (req, res) => {
   try {
+    const telegramId = req.telegramUser.id.toString();
+
+    if (telegramId !== req.params.id) {
+      return res.status(403).json({ error: "Unauthorized access" });
+    }
+
     const result = await pool.query(
       "SELECT telegram_id, balance, referrals, referral_earnings FROM users WHERE telegram_id=$1",
-      [req.params.id]
+      [telegramId]
     );
 
     res.json(result.rows[0] || {});
@@ -279,11 +285,19 @@ app.get("/user/:id", async (req, res) => {
 
 
 // ===== GET REFERRAL LIST =====
-app.get("/referrals/:id", async (req, res) => {
+app.get("/referrals/:id", verifyTelegramUser, async (req, res) => {
   try {
+
+    const telegramId = req.telegramUser.id.toString();
+
+    if (telegramId !== req.params.id) {
+      return res.status(403).json({ error: "Unauthorized access" });
+    }
+
+
     const result = await pool.query(
       "SELECT telegram_id, username, balance FROM users WHERE referred_by=$1",
-      [req.params.id]
+      [telegramId]
     );
 
     res.json(result.rows);
@@ -295,11 +309,17 @@ app.get("/referrals/:id", async (req, res) => {
 
 
 // ===== GET REFERRAL HISTORY =====
-app.get("/referral-history/:id", async (req, res) => {
+app.get("/referral-history/:id", verifyTelegramUser, async (req, res) => {
   try {
+    const telegramId = req.telegramUser.id.toString();
+
+    if (telegramId !== req.params.id) {
+      return res.status(403).json({ error: "Unauthorized access" });
+    }
+
     const result = await pool.query(
       "SELECT * FROM referral_logs WHERE referrer_id=$1 ORDER BY created_at DESC",
-      [req.params.id]
+      [telegramId]
     );
 
     res.json(result.rows);
