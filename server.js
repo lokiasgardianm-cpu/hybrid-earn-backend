@@ -3,6 +3,7 @@ const express = require("express");
 const { Telegraf } = require("telegraf");
 const { Pool } = require("pg");
 const cors = require("cors");
+const crypto = require("crypto");
 
 
 
@@ -96,15 +97,73 @@ bot.start(async (ctx) => {
 });
 
 
+
+function verifyTelegramWebApp(initData) {
+  const botToken = process.env.BOT_TOKEN;
+
+  const urlParams = new URLSearchParams(initData);
+  const hash = urlParams.get("hash");
+  urlParams.delete("hash");
+
+  const dataCheckArr = [];
+
+  urlParams.sort();
+
+  for (const [key, value] of urlParams.entries()) {
+    dataCheckArr.push(`${key}=${value}`);
+  }
+
+  const dataCheckString = dataCheckArr.join("\n");
+
+  const secretKey = crypto
+    .createHmac("sha256", "WebAppData")
+    .update(botToken)
+    .digest();
+
+  const calculatedHash = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
+    .digest("hex");
+
+  return calculatedHash === hash;
+}
+
+
+function verifyTelegramUser(req, res, next) {
+  const { initData } = req.body;
+
+  if (!initData) {
+    return res.status(401).json({ error: "No initData provided" });
+  }
+
+  const isValid = verifyTelegramWebApp(initData);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Invalid Telegram data" });
+  }
+
+  const urlParams = new URLSearchParams(initData);
+  const user = JSON.parse(urlParams.get("user"));
+
+  req.telegramUser = user;
+
+  next();
+}
+
+
 // ================= API ROUTES =================
 
 
 // ===== TAP ROUTE (CLEAN PG VERSION) =====
-app.post("/tap", async (req, res) => {
-  try {
-    const { id, amount } = req.body;
 
-    if (!id || typeof amount !== "number") {
+// ===== SECURE TAP ROUTE =====
+app.post("/tap", verifyTelegramUser, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const telegramId = req.telegramUser.id.toString();
+
+    // Basic validation
+    if (!amount || typeof amount !== "number") {
       return res.status(400).json({ error: "Invalid request" });
     }
 
@@ -112,13 +171,13 @@ app.post("/tap", async (req, res) => {
       return res.status(400).json({ error: "Invalid amount" });
     }
 
-    if (amount > 500) {
-      return res.status(400).json({ error: "Amount too large" });
+    if (amount > 50) {   // Max tap limit per request
+      return res.status(400).json({ error: "Tap amount too large" });
     }
 
     const result = await pool.query(
       "SELECT balance FROM users WHERE telegram_id = $1",
-      [id]
+      [telegramId]
     );
 
     if (result.rows.length === 0) {
@@ -130,7 +189,7 @@ app.post("/tap", async (req, res) => {
 
     await pool.query(
       "UPDATE users SET balance = $1 WHERE telegram_id = $2",
-      [newBalance, id]
+      [newBalance, telegramId]
     );
 
     res.json({
@@ -198,39 +257,31 @@ app.get("/referral-history/:id", async (req, res) => {
 
 
 // ===== AD REWARD + 5% REFERRAL BONUS =====
-app.post("/reward-ad", async (req, res) => {
+// ===== SECURE AD REWARD =====
+app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
   try {
-    const { id } = req.body;
+    const telegramId = req.telegramUser.id.toString();
     const AD_REWARD = 75;
 
-    if (!id) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    // ✅ Check user exists
+    // User check
     const userCheck = await pool.query(
-      "SELECT telegram_id FROM users WHERE telegram_id=$1",
-      [id]
+      "SELECT referred_by FROM users WHERE telegram_id=$1",
+      [telegramId]
     );
 
     if (userCheck.rows.length === 0) {
       return res.status(400).json({ error: "User not found" });
     }
 
-    // User reward
+    // Add reward to user
     await pool.query(
       "UPDATE users SET balance = balance + $1 WHERE telegram_id=$2",
-      [AD_REWARD, id]
+      [AD_REWARD, telegramId]
     );
 
-    // Get referrer
-    const result = await pool.query(
-      "SELECT referred_by FROM users WHERE telegram_id=$1",
-      [id]
-    );
+    const referrerId = userCheck.rows[0].referred_by;
 
-    const referrerId = result.rows[0]?.referred_by;
-
+    // 5% referral bonus
     if (referrerId) {
       const bonus = Math.floor(AD_REWARD * 0.05);
 
@@ -241,7 +292,7 @@ app.post("/reward-ad", async (req, res) => {
 
       await pool.query(
         "INSERT INTO referral_logs (referrer_id, from_user_id, amount, type) VALUES ($1,$2,$3,$4)",
-        [referrerId, id, bonus, "ad_bonus"]
+        [referrerId, telegramId, bonus, "ad_bonus"]
       );
     }
 
@@ -249,6 +300,66 @@ app.post("/reward-ad", async (req, res) => {
 
   } catch (error) {
     console.log("Reward Ad Error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+
+
+// ===== SPIN SYSTEM =====
+app.post("/spin", verifyTelegramUser, async (req, res) => {
+  try {
+    const telegramId = req.telegramUser.id.toString();
+
+    // User check
+    const userResult = await pool.query(
+      "SELECT balance, last_spin_at FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    // 24 hour check
+    if (user.last_spin_at) {
+      const lastSpin = new Date(user.last_spin_at);
+      const now = new Date();
+
+      const diffHours = (now - lastSpin) / (1000 * 60 * 60);
+
+      if (diffHours < 24) {
+        return res.status(400).json({
+          success: false,
+          message: "You already spun in last 24 hours"
+        });
+      }
+    }
+
+    // Random reward
+    const rewards = [50, 75, 100, 150, 200, 500];
+    const randomIndex = Math.floor(Math.random() * rewards.length);
+    const reward = rewards[randomIndex];
+
+    const newBalance = user.balance + reward;
+
+    await pool.query(
+      "UPDATE users SET balance=$1, last_spin_at=NOW() WHERE telegram_id=$2",
+      [newBalance, telegramId]
+    );
+
+    res.json({
+      success: true,
+      reward: reward,
+      balance: newBalance
+    });
+
+  } catch (error) {
+    console.log("Spin error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
