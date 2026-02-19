@@ -150,6 +150,9 @@ function verifyTelegramUser(req, res, next) {
   next();
 }
 
+// ===== TAP ANTI-CHEAT MEMORY STORE =====
+const tapTracker = new Map();
+
 
 // ================= API ROUTES =================
 
@@ -161,6 +164,57 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
   try {
     const { amount } = req.body;
     const telegramId = req.telegramUser.id.toString();
+
+
+
+
+    // ===== ANTI-CHEAT START =====
+const now = Date.now();
+
+if (!tapTracker.has(telegramId)) {
+  tapTracker.set(telegramId, {
+    lastTap: now,
+    tapCount: 1,
+    firstTapTime: now
+  });
+} else {
+  const data = tapTracker.get(telegramId);
+
+  // Minimum interval 250ms
+  if (now - data.lastTap < 250) {
+    return res.status(429).json({
+      success: false,
+      message: "Too fast"
+    });
+  }
+
+  // Reset counter every 1 second
+  if (now - data.firstTapTime > 1000) {
+    data.tapCount = 0;
+    data.firstTapTime = now;
+  }
+
+  data.tapCount++;
+
+  // Max 5 taps per second
+  if (data.tapCount > 5) {
+    return res.status(429).json({
+      success: false,
+      message: "Tap limit exceeded"
+    });
+  }
+
+  data.lastTap = now;
+  tapTracker.set(telegramId, data);
+}
+// ===== ANTI-CHEAT END =====
+
+
+
+
+
+
+
 
     // Basic validation
     if (!amount || typeof amount !== "number") {
@@ -345,7 +399,7 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
     const randomIndex = Math.floor(Math.random() * rewards.length);
     const reward = rewards[randomIndex];
 
-    const newBalance = user.balance + reward;
+    const newBalance = Number(user.balance) + reward;
 
     await pool.query(
       "UPDATE users SET balance=$1, last_spin_at=NOW() WHERE telegram_id=$2",
