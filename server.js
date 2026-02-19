@@ -4,6 +4,18 @@ const { Telegraf } = require("telegraf");
 const { Pool } = require("pg");
 const cors = require("cors");
 
+
+const { createClient } = require("@supabase/supabase-js");
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+
+
+
+
 console.log("🚀 Server Starting...");
 
 const app = express();
@@ -90,6 +102,64 @@ bot.start(async (ctx) => {
 
 
 // ================= API ROUTES =================
+
+
+// ===== TAP ROUTE =====
+app.post("/tap", async (req, res) => {
+  try {
+    const { id, amount } = req.body;
+
+    // 🔒 Basic validation
+    if (!id || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    if (amount > 500) {
+      return res.status(400).json({ error: "Amount too large" });
+    }
+
+    // 1️⃣ Check user
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("telegram_id, balance")
+      .eq("telegram_id", id)
+      .single();
+
+    if (userError || !user) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    // 2️⃣ Increase balance
+    const newBalance = user.balance + amount;
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ balance: newBalance })
+      .eq("telegram_id", id);
+
+    if (updateError) {
+      return res.status(500).json({ error: "Update failed" });
+    }
+
+    // 3️⃣ Send response
+    res.json({
+      success: true,
+      balance: newBalance
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+
 
 // ===== GET USER DATA =====
 app.get("/user/:id", async (req, res) => {
