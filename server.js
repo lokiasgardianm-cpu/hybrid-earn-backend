@@ -46,13 +46,27 @@ bot.start(async (ctx) => {
         ]
       );
 
-
-      // Referral bonus
+      // ===== REFERRAL BONUS =====
       if (refId && refId !== telegramId) {
-        await pool.query(
-          "UPDATE users SET balance = balance + 1000, referrals = referrals + 1 WHERE telegram_id=$1",
+
+        const refCheck = await pool.query(
+          "SELECT telegram_id FROM users WHERE telegram_id=$1",
           [refId]
         );
+
+        if (refCheck.rows.length > 0) {
+
+          await pool.query(
+            "UPDATE users SET balance = balance + 1000, referrals = referrals + 1 WHERE telegram_id=$1",
+            [refId]
+          );
+
+          await pool.query(
+            "INSERT INTO referral_logs (referrer_id, from_user_id, amount, type) VALUES ($1,$2,$3,$4)",
+            [refId, telegramId, 1000, "join_bonus"]
+          );
+
+        }
       }
     }
 
@@ -77,7 +91,7 @@ bot.start(async (ctx) => {
 
 // ================= API ROUTES =================
 
-// Get User Data
+// ===== GET USER DATA =====
 app.get("/user/:id", async (req, res) => {
   try {
     const result = await pool.query(
@@ -93,7 +107,39 @@ app.get("/user/:id", async (req, res) => {
 });
 
 
-// Ad Reward + 5% Referral Bonus
+// ===== GET REFERRAL LIST =====
+app.get("/referrals/:id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT telegram_id, username, balance FROM users WHERE referred_by=$1",
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.log("Referral list error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// ===== GET REFERRAL HISTORY =====
+app.get("/referral-history/:id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM referral_logs WHERE referrer_id=$1 ORDER BY created_at DESC",
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.log("Referral history error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// ===== AD REWARD + 5% REFERRAL BONUS =====
 app.post("/reward-ad", async (req, res) => {
   try {
     const { id } = req.body;
@@ -101,6 +147,16 @@ app.post("/reward-ad", async (req, res) => {
 
     if (!id) {
       return res.status(400).json({ error: "Invalid request" });
+    }
+
+    // ✅ Check user exists
+    const userCheck = await pool.query(
+      "SELECT telegram_id FROM users WHERE telegram_id=$1",
+      [id]
+    );
+
+    if (userCheck.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
     }
 
     // User reward
@@ -124,6 +180,11 @@ app.post("/reward-ad", async (req, res) => {
         "UPDATE users SET balance = balance + $1, referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
         [bonus, referrerId]
       );
+
+      await pool.query(
+        "INSERT INTO referral_logs (referrer_id, from_user_id, amount, type) VALUES ($1,$2,$3,$4)",
+        [referrerId, id, bonus, "ad_bonus"]
+      );
     }
 
     res.json({ success: true });
@@ -133,9 +194,6 @@ app.post("/reward-ad", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
-
-
 
 
 // ================= START SERVER =================
