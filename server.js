@@ -5,12 +5,7 @@ const { Pool } = require("pg");
 const cors = require("cors");
 
 
-const { createClient } = require("@supabase/supabase-js");
 
-const supabase = createClient(
-  process.env.DATABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 
 
@@ -122,16 +117,51 @@ app.post("/tap", async (req, res) => {
       return res.status(400).json({ error: "Amount too large" });
     }
 
-    // 1️⃣ Check user
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("telegram_id, balance")
-      .eq("telegram_id", id)
-      .single();
+    // ===== TAP ROUTE (PG VERSION) =====
+    app.post("/tap", async (req, res) => {
+      try {
+        const { id, amount } = req.body;
 
-    if (userError || !user) {
-      return res.status(400).json({ error: "User not found" });
-    }
+        if (!id || typeof amount !== "number") {
+          return res.status(400).json({ error: "Invalid request" });
+        }
+
+        if (amount <= 0) {
+          return res.status(400).json({ error: "Invalid amount" });
+        }
+
+        if (amount > 500) {
+          return res.status(400).json({ error: "Amount too large" });
+        }
+
+        const userResult = await pool.query(
+          "SELECT balance FROM users WHERE telegram_id = $1",
+          [id]
+        );
+
+        if (userResult.rows.length === 0) {
+          return res.status(400).json({ error: "User not found" });
+        }
+
+        const currentBalance = userResult.rows[0].balance;
+        const newBalance = currentBalance + amount;
+
+        await pool.query(
+          "UPDATE users SET balance = $1 WHERE telegram_id = $2",
+          [newBalance, id]
+        );
+
+        res.json({
+          success: true,
+          balance: newBalance
+        });
+
+      } catch (error) {
+        console.log("Tap error:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    });
+
 
     // 2️⃣ Increase balance
     const newBalance = user.balance + amount;
