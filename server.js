@@ -81,7 +81,7 @@ bot.start(async (ctx) => {
 app.get("/user/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT telegram_id, balance, referrals FROM users WHERE telegram_id=$1",
+      "SELECT telegram_id, balance, referrals, referral_earnings FROM users WHERE telegram_id=$1",
       [req.params.id]
     );
 
