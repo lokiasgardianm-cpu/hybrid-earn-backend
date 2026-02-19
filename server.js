@@ -87,27 +87,49 @@ app.get("/user/:id", async (req, res) => {
 });
 
 
-// Add Balance (temporary basic version)
-app.post("/add-balance", async (req, res) => {
+// Ad Reward + 5% Referral Bonus
+app.post("/reward-ad", async (req, res) => {
   try {
-    const { id, amount } = req.body;
+    const { id } = req.body;
+    const AD_REWARD = 75;
 
-    if (!id || !amount) {
+    if (!id) {
       return res.status(400).json({ error: "Invalid request" });
     }
 
+    // User reward
     await pool.query(
       "UPDATE users SET balance = balance + $1 WHERE telegram_id=$2",
-      [amount, id]
+      [AD_REWARD, id]
     );
+
+    // Get referrer
+    const result = await pool.query(
+      "SELECT referred_by FROM users WHERE telegram_id=$1",
+      [id]
+    );
+
+    const referrerId = result.rows[0]?.referred_by;
+
+    if (referrerId) {
+      const bonus = Math.floor(AD_REWARD * 0.05);
+
+      await pool.query(
+        "UPDATE users SET balance = balance + $1, referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
+        [bonus, referrerId]
+      );
+    }
 
     res.json({ success: true });
 
   } catch (error) {
-    console.log("Add Balance Error:", error);
+    console.log("Reward Ad Error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
+
+
+
 
 
 // ================= START SERVER =================
