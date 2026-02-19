@@ -99,12 +99,11 @@ bot.start(async (ctx) => {
 // ================= API ROUTES =================
 
 
-// ===== TAP ROUTE =====
+// ===== TAP ROUTE (CLEAN PG VERSION) =====
 app.post("/tap", async (req, res) => {
   try {
     const { id, amount } = req.body;
 
-    // 🔒 Basic validation
     if (!id || typeof amount !== "number") {
       return res.status(400).json({ error: "Invalid request" });
     }
@@ -117,75 +116,34 @@ app.post("/tap", async (req, res) => {
       return res.status(400).json({ error: "Amount too large" });
     }
 
-    // ===== TAP ROUTE (PG VERSION) =====
-    app.post("/tap", async (req, res) => {
-      try {
-        const { id, amount } = req.body;
+    const result = await pool.query(
+      "SELECT balance FROM users WHERE telegram_id = $1",
+      [id]
+    );
 
-        if (!id || typeof amount !== "number") {
-          return res.status(400).json({ error: "Invalid request" });
-        }
-
-        if (amount <= 0) {
-          return res.status(400).json({ error: "Invalid amount" });
-        }
-
-        if (amount > 500) {
-          return res.status(400).json({ error: "Amount too large" });
-        }
-
-        const userResult = await pool.query(
-          "SELECT balance FROM users WHERE telegram_id = $1",
-          [id]
-        );
-
-        if (userResult.rows.length === 0) {
-          return res.status(400).json({ error: "User not found" });
-        }
-
-        const currentBalance = userResult.rows[0].balance;
-        const newBalance = currentBalance + amount;
-
-        await pool.query(
-          "UPDATE users SET balance = $1 WHERE telegram_id = $2",
-          [newBalance, id]
-        );
-
-        res.json({
-          success: true,
-          balance: newBalance
-        });
-
-      } catch (error) {
-        console.log("Tap error:", error);
-        res.status(500).json({ error: "Server error" });
-      }
-    });
-
-
-    // 2️⃣ Increase balance
-    const newBalance = user.balance + amount;
-
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({ balance: newBalance })
-      .eq("telegram_id", id);
-
-    if (updateError) {
-      return res.status(500).json({ error: "Update failed" });
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
     }
 
-    // 3️⃣ Send response
+    const currentBalance = Number(result.rows[0].balance);
+    const newBalance = currentBalance + amount;
+
+    await pool.query(
+      "UPDATE users SET balance = $1 WHERE telegram_id = $2",
+      [newBalance, id]
+    );
+
     res.json({
       success: true,
       balance: newBalance
     });
 
   } catch (error) {
-    console.log(error);
+    console.log("Tap error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 
 
