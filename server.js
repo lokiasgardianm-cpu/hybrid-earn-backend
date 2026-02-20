@@ -782,6 +782,53 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
 
 
 
+// ===== ADMIN APPROVE WITHDRAW =====
+app.post(
+  "/admin/withdraw/approve",
+  verifyTelegramUser,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { request_id } = req.body;
+
+      if (!request_id) {
+        return res.status(400).json({
+          success: false,
+          message: "Request ID required"
+        });
+      }
+
+      const requestResult = await pool.query(
+        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending'",
+        [request_id]
+      );
+
+      if (requestResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or already processed request"
+        });
+      }
+
+      await pool.query(
+        "UPDATE withdraw_requests SET status='approved' WHERE id=$1",
+        [request_id]
+      );
+
+      res.json({
+        success: true,
+        message: "Withdraw approved successfully"
+      });
+
+    } catch (error) {
+      console.log("Approve error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+
+
 
 
 
