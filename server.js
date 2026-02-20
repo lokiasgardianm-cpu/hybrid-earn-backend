@@ -157,6 +157,39 @@ function verifyTelegramUser(req, res, next) {
   next();
 }
 
+
+
+async function verifyAdmin(req, res, next) {
+  try {
+    const telegramId = req.telegramUser.id.toString();
+
+    const result = await pool.query(
+      "SELECT * FROM admin_users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access required"
+      });
+    }
+
+    req.admin = result.rows[0];
+    next();
+
+  } catch (error) {
+    console.log("Admin verify error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+
+
+
+
+
+
 // ===== TAP ANTI-CHEAT MEMORY STORE =====
 const tapTracker = new Map();
 
