@@ -494,6 +494,70 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
 
 
 
+// ===== SHORTLINK SYSTEM =====
+app.post("/shortlink", verifyTelegramUser, async (req, res) => {
+  try {
+    const telegramId = req.telegramUser.id.toString();
+    const { link_id } = req.body;
+
+    if (!link_id) {
+      return res.status(400).json({ error: "Link ID required" });
+    }
+
+    const SHORTLINK_REWARD = 50; // তুমি চাইলে change করতে পারো
+
+    // Check already claimed
+    const existing = await pool.query(
+      "SELECT id FROM shortlink_logs WHERE telegram_id=$1 AND link_id=$2",
+      [telegramId, link_id]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Already claimed this link"
+      });
+    }
+
+    // Get current balance
+    const userResult = await pool.query(
+      "SELECT balance FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const currentBalance = Number(userResult.rows[0].balance);
+    const newBalance = currentBalance + SHORTLINK_REWARD;
+
+    // Update balance
+    await pool.query(
+      "UPDATE users SET balance=$1 WHERE telegram_id=$2",
+      [newBalance, telegramId]
+    );
+
+    // Log reward
+    await pool.query(
+      "INSERT INTO shortlink_logs (telegram_id, link_id, reward) VALUES ($1,$2,$3)",
+      [telegramId, link_id, SHORTLINK_REWARD]
+    );
+
+    res.json({
+      success: true,
+      reward: SHORTLINK_REWARD,
+      balance: newBalance
+    });
+
+  } catch (error) {
+    console.log("Shortlink error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
 
 
 
