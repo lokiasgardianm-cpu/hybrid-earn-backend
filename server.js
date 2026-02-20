@@ -227,6 +227,51 @@ async function updateCoinWithLedger(
       [newBalance, userId]
     );
 
+    // ===== LIFETIME 1% REFERRAL BONUS =====
+    if (amount > 0 && type !== "referral_bonus") {
+
+      const refResult = await client.query(
+        "SELECT referred_by FROM users WHERE telegram_id=$1",
+        [userId]
+      );
+
+      const referrerId = refResult.rows[0]?.referred_by;
+
+      if (referrerId) {
+
+        const referralBonus = Math.floor(amount * 0.01);
+
+        if (referralBonus > 0) {
+
+          const refUser = await client.query(
+            "SELECT coin_balance FROM users WHERE telegram_id=$1 FOR UPDATE",
+            [referrerId]
+          );
+
+          if (refUser.rows.length > 0) {
+
+            const refCurrent = Number(refUser.rows[0].coin_balance);
+
+            await client.query(
+              "UPDATE users SET coin_balance=$1 WHERE telegram_id=$2",
+              [refCurrent + referralBonus, referrerId]
+            );
+
+            await client.query(
+              `INSERT INTO ledger (user_id, amount, type, source)
+           VALUES ($1,$2,$3,$4)`,
+              [referrerId, referralBonus, "referral_bonus", "1_percent_lifetime"]
+            );
+
+            await client.query(
+              "UPDATE users SET referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
+              [referralBonus, referrerId]
+            );
+          }
+        }
+      }
+    }
+
     await client.query(
       `INSERT INTO ledger (user_id, amount, type, source)
        VALUES ($1,$2,$3,$4)`,
