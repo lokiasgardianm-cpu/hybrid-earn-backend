@@ -195,13 +195,22 @@ const tapTracker = new Map();
 
 
 // ===== REUSABLE LEDGER FUNCTION =====
-async function updateUserBalanceWithLedger(userId, amount, type, source) {
-  const client = await pool.connect();
+async function updateUserBalanceWithLedger(
+  userId,
+  amount,
+  type,
+  source,
+  externalClient = null   // ⭐ নতুন parameter
+) {
+  const client = externalClient || await pool.connect();
+
+  const shouldRelease = !externalClient;
 
   try {
-    await client.query("BEGIN");
+    if (!externalClient) {
+      await client.query("BEGIN");
+    }
 
-    // Lock row
     const result = await client.query(
       "SELECT balance FROM users WHERE telegram_id = $1 FOR UPDATE",
       [userId]
@@ -218,7 +227,6 @@ async function updateUserBalanceWithLedger(userId, amount, type, source) {
       throw new Error("Insufficient balance");
     }
 
-    // Insert transaction log
     await client.query(
       `INSERT INTO transactions 
        (user_id, type, amount, balance_before, balance_after, source)
@@ -226,23 +234,34 @@ async function updateUserBalanceWithLedger(userId, amount, type, source) {
       [userId, type, amount, currentBalance, newBalance, source]
     );
 
-    // Update balance
     await client.query(
       "UPDATE users SET balance = $1 WHERE telegram_id = $2",
       [newBalance, userId]
     );
 
-    await client.query("COMMIT");
+    if (!externalClient) {
+      await client.query("COMMIT");
+    }
 
     return newBalance;
 
   } catch (error) {
-    await client.query("ROLLBACK");
+
+    if (!externalClient) {
+      await client.query("ROLLBACK");
+    }
+
     throw error;
+
   } finally {
-    client.release();
+
+    if (shouldRelease) {
+      client.release();
+    }
   }
 }
+
+
 
 
 // ================= API ROUTES =================
@@ -320,67 +339,12 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ error: "Tap amount too large" });
     }
 
-
-
-
-
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      const result = await client.query(
-        "SELECT balance FROM users WHERE telegram_id = $1 FOR UPDATE",
-        [telegramId]
-      );
-
-      if (result.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "User not found" });
-      }
-
-      const currentBalance = Number(result.rows[0].balance);
-      const newBalance = currentBalance + amount;
-
-      // Insert transaction log
-      await client.query(
-        `INSERT INTO transactions 
-    (user_id, type, amount, balance_before, balance_after, source)
-    VALUES ($1,$2,$3,$4,$5,$6)`,
-        [
-          telegramId,
-          "tap",
-          amount,
-          currentBalance,
-          newBalance,
-          "/tap"
-        ]
-      );
-
-      await client.query(
-        "UPDATE users SET balance = $1 WHERE telegram_id = $2",
-        [newBalance, telegramId]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({
-        success: true,
-        balance: newBalance
-      });
-
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.log("Tap TX error:", err);
-      res.status(500).json({ error: "Transaction failed" });
-    } finally {
-      client.release();
-    }
-
-
-
-
-
+    const newBalance = await updateUserBalanceWithLedger(
+      telegramId,
+      amount,
+      "tap",
+      "/tap"
+    );
 
     res.json({
       success: true,
@@ -680,20 +644,14 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
     }
 
     // Get current balance
-    const userResult = await pool.query(
-      "SELECT balance FROM users WHERE telegram_id=$1",
-      [telegramId]
-    );
+    
 
     if (userResult.rows.length === 0) {
       return res.status(400).json({ error: "User not found" });
     }
 
-    const currentBalance = Number(userResult.rows[0].balance);
-    const newBalance = currentBalance + SHORTLINK_REWARD;
-
     // Update balance
-    await updateUserBalanceWithLedger(
+    const newBalance = await updateUserBalanceWithLedger(
       telegramId,
       SHORTLINK_REWARD,
       "shortlink",
@@ -832,12 +790,14 @@ app.post(
 
 
 
-// ===== ADMIN REJECT WITHDRAW =====
+// ===== ADMIN REJECT WITHDRAW (ATOMIC VERSION) =====
 app.post(
   "/admin/withdraw/reject",
   verifyTelegramUser,
   verifyAdmin,
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const { request_id } = req.body;
 
@@ -848,12 +808,15 @@ app.post(
         });
       }
 
-      const requestResult = await pool.query(
-        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending'",
+      await client.query("BEGIN");
+
+      const requestResult = await client.query(
+        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending' FOR UPDATE",
         [request_id]
       );
 
       if (requestResult.rows.length === 0) {
+        await client.query("ROLLBACK");
         return res.status(400).json({
           success: false,
           message: "Invalid or already processed request"
@@ -862,19 +825,21 @@ app.post(
 
       const withdrawData = requestResult.rows[0];
 
-      // ✅ Refund via Ledger (Safe + Atomic)
+      // 🔁 Refund via Ledger (same transaction)
       await updateUserBalanceWithLedger(
         withdrawData.user_id,
-        withdrawData.amount, // positive refund
+        withdrawData.amount,
         "admin_adjust",
-        "withdraw_reject_refund"
+        "withdraw_reject_refund",
+        client
       );
 
-      // Update request status
-      await pool.query(
+      await client.query(
         "UPDATE withdraw_requests SET status='rejected' WHERE id=$1",
         [request_id]
       );
+
+      await client.query("COMMIT");
 
       res.json({
         success: true,
@@ -882,8 +847,11 @@ app.post(
       });
 
     } catch (error) {
+      await client.query("ROLLBACK");
       console.log("Reject error:", error);
       res.status(500).json({ error: "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
