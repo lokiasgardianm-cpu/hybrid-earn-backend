@@ -229,22 +229,67 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ error: "Tap amount too large" });
     }
 
-    const result = await pool.query(
-      "SELECT balance FROM users WHERE telegram_id = $1",
-      [telegramId]
-    );
 
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
+
+
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const result = await client.query(
+        "SELECT balance FROM users WHERE telegram_id = $1 FOR UPDATE",
+        [telegramId]
+      );
+
+      if (result.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "User not found" });
+      }
+
+      const currentBalance = Number(result.rows[0].balance);
+      const newBalance = currentBalance + amount;
+
+      // Insert transaction log
+      await client.query(
+        `INSERT INTO transactions 
+    (user_id, type, amount, balance_before, balance_after, source)
+    VALUES ($1,$2,$3,$4,$5,$6)`,
+        [
+          telegramId,
+          "tap",
+          amount,
+          currentBalance,
+          newBalance,
+          "/tap"
+        ]
+      );
+
+      await client.query(
+        "UPDATE users SET balance = $1 WHERE telegram_id = $2",
+        [newBalance, telegramId]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        success: true,
+        balance: newBalance
+      });
+
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.log("Tap TX error:", err);
+      res.status(500).json({ error: "Transaction failed" });
+    } finally {
+      client.release();
     }
 
-    const currentBalance = Number(result.rows[0].balance);
-    const newBalance = currentBalance + amount;
 
-    await pool.query(
-      "UPDATE users SET balance = $1 WHERE telegram_id = $2",
-      [newBalance, telegramId]
-    );
+
+
+
 
     res.json({
       success: true,
