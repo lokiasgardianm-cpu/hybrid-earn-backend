@@ -439,6 +439,68 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
 });
 
 
+
+
+// ===== DAILY BONUS SYSTEM =====
+app.post("/daily", verifyTelegramUser, async (req, res) => {
+  try {
+    const telegramId = req.telegramUser.id.toString();
+    const DAILY_REWARD = 100; // তুমি চাইলে change করতে পারো
+
+    const userResult = await pool.query(
+      "SELECT balance, last_daily_at FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    // 24 hour check
+    if (user.last_daily_at) {
+      const lastDaily = new Date(user.last_daily_at);
+      const now = new Date();
+
+      const diffHours = (now - lastDaily) / (1000 * 60 * 60);
+
+      if (diffHours < 24) {
+        return res.status(400).json({
+          success: false,
+          message: "Daily already claimed"
+        });
+      }
+    }
+
+    const newBalance = Number(user.balance) + DAILY_REWARD;
+
+    await pool.query(
+      "UPDATE users SET balance=$1, last_daily_at=NOW() WHERE telegram_id=$2",
+      [newBalance, telegramId]
+    );
+
+    res.json({
+      success: true,
+      reward: DAILY_REWARD,
+      balance: newBalance
+    });
+
+  } catch (error) {
+    console.log("Daily error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+
+
+
+
+
+
+
 // ================= START SERVER =================
 bot.launch();
 app.listen(5000, () => {
