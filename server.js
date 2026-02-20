@@ -45,11 +45,13 @@ bot.start(async (ctx) => {
     if (userCheck.rows.length === 0) {
 
       await pool.query(
-        "INSERT INTO users (telegram_id, username, balance, referrals, referred_by) VALUES ($1,$2,$3,0,$4)",
+        `INSERT INTO users 
+   (telegram_id, username, coin_balance, cash_balance, referrals, referred_by)
+   VALUES ($1, $2, $3, 0, 0, $4)`,
         [
           telegramId,
           username,
-          200, // New user join bonus
+          200,
           refId && refId !== telegramId ? refId : null
         ]
       );
@@ -64,7 +66,7 @@ bot.start(async (ctx) => {
 
         if (refCheck.rows.length > 0) {
 
-          await updateUserBalanceWithLedger(
+          await updateCoinWithLedger(
             refId,
             1000,
             "referral",
@@ -195,69 +197,100 @@ const tapTracker = new Map();
 
 
 // ===== REUSABLE LEDGER FUNCTION =====
-async function updateUserBalanceWithLedger(
+async function updateCoinWithLedger(
   userId,
   amount,
   type,
   source,
-  externalClient = null   // ⭐ নতুন parameter
+  externalClient = null
 ) {
   const client = externalClient || await pool.connect();
-
   const shouldRelease = !externalClient;
 
   try {
-    if (!externalClient) {
-      await client.query("BEGIN");
-    }
+    if (!externalClient) await client.query("BEGIN");
 
     const result = await client.query(
-      "SELECT balance FROM users WHERE telegram_id = $1 FOR UPDATE",
+      "SELECT coin_balance FROM users WHERE telegram_id=$1 FOR UPDATE",
       [userId]
     );
 
-    if (result.rows.length === 0) {
-      throw new Error("User not found");
-    }
+    if (result.rows.length === 0) throw new Error("User not found");
 
-    const currentBalance = Number(result.rows[0].balance);
-    const newBalance = currentBalance + amount;
+    const current = Number(result.rows[0].coin_balance);
+    const newBalance = current + amount;
 
-    if (newBalance < 0) {
-      throw new Error("Insufficient balance");
-    }
+    if (newBalance < 0) throw new Error("Insufficient coin balance");
 
     await client.query(
-      `INSERT INTO transactions 
-       (user_id, type, amount, balance_before, balance_after, source)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [userId, type, amount, currentBalance, newBalance, source]
-    );
-
-    await client.query(
-      "UPDATE users SET balance = $1 WHERE telegram_id = $2",
+      "UPDATE users SET coin_balance=$1 WHERE telegram_id=$2",
       [newBalance, userId]
     );
 
-    if (!externalClient) {
-      await client.query("COMMIT");
-    }
+    await client.query(
+      `INSERT INTO ledger (user_id, amount, type, source)
+       VALUES ($1,$2,$3,$4)`,
+      [userId, amount, type, source]
+    );
+
+    if (!externalClient) await client.query("COMMIT");
 
     return newBalance;
 
-  } catch (error) {
-
-    if (!externalClient) {
-      await client.query("ROLLBACK");
-    }
-
-    throw error;
-
+  } catch (err) {
+    if (!externalClient) await client.query("ROLLBACK");
+    throw err;
   } finally {
+    if (shouldRelease) client.release();
+  }
+}
 
-    if (shouldRelease) {
-      client.release();
-    }
+
+async function updateCashWithLedger(
+  userId,
+  amount,
+  type,
+  source,
+  externalClient = null
+) {
+  const client = externalClient || await pool.connect();
+  const shouldRelease = !externalClient;
+
+  try {
+    if (!externalClient) await client.query("BEGIN");
+
+    const result = await client.query(
+      "SELECT cash_balance FROM users WHERE telegram_id=$1 FOR UPDATE",
+      [userId]
+    );
+
+    if (result.rows.length === 0) throw new Error("User not found");
+
+    const current = Number(result.rows[0].cash_balance);
+    const newBalance = current + amount;
+
+    if (newBalance < 0) throw new Error("Insufficient cash balance");
+
+    await client.query(
+      "UPDATE users SET cash_balance=$1 WHERE telegram_id=$2",
+      [newBalance, userId]
+    );
+
+    await client.query(
+      `INSERT INTO ledger (user_id, amount, type, source)
+       VALUES ($1,$2,$3,$4)`,
+      [userId, amount, type, source]
+    );
+
+    if (!externalClient) await client.query("COMMIT");
+
+    return newBalance;
+
+  } catch (err) {
+    if (!externalClient) await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    if (shouldRelease) client.release();
   }
 }
 
@@ -339,7 +372,7 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ error: "Tap amount too large" });
     }
 
-    const newBalance = await updateUserBalanceWithLedger(
+    const newBalance = await updateCoinWithLedger(
       telegramId,
       amount,
       "tap",
@@ -372,7 +405,7 @@ app.get("/user/:id", verifyTelegramUser, async (req, res) => {
     }
 
     const result = await pool.query(
-      "SELECT telegram_id, balance, referrals, referral_earnings FROM users WHERE telegram_id=$1",
+      "SELECT telegram_id, coin_balance, cash_balance, referrals, referral_earnings FROM users WHERE telegram_id=$1",
       [telegramId]
     );
 
@@ -396,7 +429,7 @@ app.get("/referrals/:id", verifyTelegramUser, async (req, res) => {
 
 
     const result = await pool.query(
-      "SELECT telegram_id, username, balance FROM users WHERE referred_by=$1",
+      "SELECT telegram_id, username, coin_balance FROM users WHERE referred_by=$1",
       [telegramId]
     );
 
@@ -442,53 +475,43 @@ app.get("/referral-history/:id", verifyTelegramUser, async (req, res) => {
 
 
 app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const telegramId = req.telegramUser.id.toString();
-    const AD_REWARD = 75;
 
-    // User check
-    const userCheck = await pool.query(
-      "SELECT referred_by FROM users WHERE telegram_id=$1",
-      [telegramId]
+    await client.query("BEGIN");
+
+    // economy_config থেকে reward আনবো
+    const rewardResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='ad_reward'"
     );
 
-    if (userCheck.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
-    }
+    const rewardAmount = Number(rewardResult.rows[0].value);
 
-    // Add reward to user
-    await updateUserBalanceWithLedger(
+
+    // 🔥 Ledger-safe coin update
+
+
+    await updateCoinWithLedger(
       telegramId,
-      AD_REWARD,
-      "ad",
-      "/reward-ad"
+      rewardAmount,
+      "reward_ad",
+      "Ad reward",
+      client
     );
 
-    const referrerId = userCheck.rows[0].referred_by;
+    // 
 
-    // 5% referral bonus
-    if (referrerId) {
-      const bonus = Math.floor(AD_REWARD * 0.05);
+    await client.query("COMMIT");
 
-      await updateUserBalanceWithLedger(
-        referrerId,
-        bonus,
-        "referral",
-        "ad_bonus"
-      );
-
-      // referral_earnings field আলাদা update করবে
-      await pool.query(
-        "UPDATE users SET referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
-        [bonus, referrerId]
-      );
-    }
-
-    res.json({ success: true });
+    res.json({ success: true, reward: rewardAmount });
 
   } catch (error) {
-    console.log("Reward Ad Error:", error);
+    await client.query("ROLLBACK");
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -503,7 +526,7 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
 
     // User check
     const userResult = await pool.query(
-      "SELECT balance, last_spin_at FROM users WHERE telegram_id=$1",
+      "SELECT coin_balance, last_spin_at FROM users WHERE telegram_id=$1",
       [telegramId]
     );
 
@@ -533,7 +556,7 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
     const randomIndex = Math.floor(Math.random() * rewards.length);
     const reward = rewards[randomIndex];
 
-    const newBalance = await updateUserBalanceWithLedger(
+    const newBalance = await updateCoinWithLedger(
       telegramId,
       reward,
       "spin",
@@ -567,7 +590,7 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
     const DAILY_REWARD = 100; // তুমি চাইলে change করতে পারো
 
     const userResult = await pool.query(
-      "SELECT balance, last_daily_at FROM users WHERE telegram_id=$1",
+      "SELECT coin_balance, last_daily_at FROM users WHERE telegram_id=$1",
       [telegramId]
     );
 
@@ -592,7 +615,7 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
       }
     }
 
-    const newBalance = await updateUserBalanceWithLedger(
+    const newBalance = await updateCoinWithLedger(
       telegramId,
       DAILY_REWARD,
       "daily",
@@ -620,62 +643,52 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
 
 // ===== SHORTLINK SYSTEM =====
 app.post("/shortlink", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const telegramId = req.telegramUser.id.toString();
-    const { link_id } = req.body;
 
-    if (!link_id) {
-      return res.status(400).json({ error: "Link ID required" });
-    }
+    await client.query("BEGIN");
 
-    const SHORTLINK_REWARD = 50; // তুমি চাইলে change করতে পারো
-
-    // Check already claimed
-    const existing = await pool.query(
-      "SELECT id FROM shortlink_logs WHERE telegram_id=$1 AND link_id=$2",
-      [telegramId, link_id]
+    // 🔥 economy_config থেকে reward আনবো
+    const rewardResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='shortlink_reward'"
     );
 
-    if (existing.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Already claimed this link"
-      });
-    }
+    const rewardAmount = Number(rewardResult.rows[0].value);
 
-    // Get current balance
-    
+    // 🔥 Unified ledger system
 
-    if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
-    }
 
-    // Update balance
-    const newBalance = await updateUserBalanceWithLedger(
+    await updateCoinWithLedger(
       telegramId,
-      SHORTLINK_REWARD,
+      rewardAmount,
+      "shortlink_reward",
       "shortlink",
-      "/shortlink"
+      client
     );
 
-    // Log reward
-    await pool.query(
-      "INSERT INTO shortlink_logs (telegram_id, link_id, reward) VALUES ($1,$2,$3)",
-      [telegramId, link_id, SHORTLINK_REWARD]
-    );
+
+
+
+
+
+
+
+    await client.query("COMMIT");
 
     res.json({
       success: true,
-      reward: SHORTLINK_REWARD,
-      balance: newBalance
+      reward: rewardAmount
     });
 
   } catch (error) {
-    console.log("Shortlink error:", error);
+    await client.query("ROLLBACK");
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
-
 
 
 
@@ -863,7 +876,7 @@ app.post(
       const withdrawData = requestResult.rows[0];
 
       // 🔁 Refund via Ledger (same transaction)
-      await updateUserBalanceWithLedger(
+      await updateCashWithLedger(
         withdrawData.user_id,
         withdrawData.amount,
         "admin_adjust",
