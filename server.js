@@ -683,6 +683,8 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
 // ===== WITHDRAW SYSTEM =====
 app.post("/withdraw", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const telegramId = req.telegramUser.id.toString();
     const { amount, method, account_number } = req.body;
@@ -700,32 +702,39 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
       });
     }
 
-    // Get current balance
-    // Deduct balance using ledger
+    await client.query("BEGIN");
+
+    // 💎 Deduct balance using same transaction client
     try {
       await updateUserBalanceWithLedger(
         telegramId,
         -amount,
         "withdraw",
-        "/withdraw"
+        "/withdraw",
+        client   // ⭐ IMPORTANT
       );
     } catch (err) {
+      await client.query("ROLLBACK");
+
       if (err.message === "Insufficient balance") {
         return res.status(400).json({
           success: false,
           message: "Insufficient balance"
         });
       }
+
       throw err;
     }
 
-    // Insert withdraw request
-    await pool.query(
+    // 💎 Insert withdraw request
+    await client.query(
       `INSERT INTO withdraw_requests 
        (user_id, amount, method, account_number, status) 
        VALUES ($1,$2,$3,$4,'pending')`,
       [telegramId, amount, method, account_number]
     );
+
+    await client.query("COMMIT");
 
     res.json({
       success: true,
@@ -733,8 +742,11 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
     });
 
   } catch (error) {
+    await client.query("ROLLBACK");
     console.log("Withdraw error:", error);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
