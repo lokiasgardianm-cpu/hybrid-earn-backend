@@ -561,6 +561,83 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
 
 
+// ===== WITHDRAW SYSTEM =====
+app.post("/withdraw", verifyTelegramUser, async (req, res) => {
+  try {
+    const telegramId = req.telegramUser.id.toString();
+    const { amount, method, account_number } = req.body;
+
+    const MIN_WITHDRAW = 1000;
+
+    if (!amount || !method || !account_number) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
+
+    if (amount < MIN_WITHDRAW) {
+      return res.status(400).json({
+        success: false,
+        message: "Minimum withdraw is 1000 coins"
+      });
+    }
+
+    // Get current balance
+    const userResult = await pool.query(
+      "SELECT balance FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const currentBalance = Number(userResult.rows[0].balance);
+
+    if (currentBalance < amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient balance"
+      });
+    }
+
+    const newBalance = currentBalance - amount;
+
+    if (newBalance < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid balance calculation"
+      });
+    }
+
+    // Deduct balance
+    await pool.query(
+      "UPDATE users SET balance=$1 WHERE telegram_id=$2",
+      [newBalance, telegramId]
+    );
+
+    // Insert withdraw request
+    await pool.query(
+      `INSERT INTO withdraw_requests 
+       (user_id, amount, method, account_number, status) 
+       VALUES ($1,$2,$3,$4,'pending')`,
+      [telegramId, amount, method, account_number]
+    );
+
+    res.json({
+      success: true,
+      message: "Withdraw request submitted"
+    });
+
+  } catch (error) {
+    console.log("Withdraw error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+
+
+
 
 
 
