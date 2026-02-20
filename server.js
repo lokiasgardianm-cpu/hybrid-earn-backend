@@ -832,6 +832,67 @@ app.post(
 
 
 
+// ===== ADMIN REJECT WITHDRAW =====
+app.post(
+  "/admin/withdraw/reject",
+  verifyTelegramUser,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { request_id } = req.body;
+
+      if (!request_id) {
+        return res.status(400).json({
+          success: false,
+          message: "Request ID required"
+        });
+      }
+
+      const requestResult = await pool.query(
+        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending'",
+        [request_id]
+      );
+
+      if (requestResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or already processed request"
+        });
+      }
+
+      const withdrawData = requestResult.rows[0];
+
+      // ✅ Refund via Ledger (Safe + Atomic)
+      await updateUserBalanceWithLedger(
+        withdrawData.user_id,
+        withdrawData.amount, // positive refund
+        "admin_adjust",
+        "withdraw_reject_refund"
+      );
+
+      // Update request status
+      await pool.query(
+        "UPDATE withdraw_requests SET status='rejected' WHERE id=$1",
+        [request_id]
+      );
+
+      res.json({
+        success: true,
+        message: "Withdraw rejected & refunded successfully"
+      });
+
+    } catch (error) {
+      console.log("Reject error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+
+
+
+
+
 
 
 
