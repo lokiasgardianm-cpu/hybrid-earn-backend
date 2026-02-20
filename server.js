@@ -64,8 +64,15 @@ bot.start(async (ctx) => {
 
         if (refCheck.rows.length > 0) {
 
+          await updateUserBalanceWithLedger(
+            refId,
+            1000,
+            "referral",
+            "join_bonus"
+          );
+
           await pool.query(
-            "UPDATE users SET balance = balance + 1000, referrals = referrals + 1 WHERE telegram_id=$1",
+            "UPDATE users SET referrals = referrals + 1 WHERE telegram_id=$1",
             [refId]
           );
 
