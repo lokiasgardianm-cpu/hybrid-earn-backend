@@ -710,38 +710,23 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
     }
 
     // Get current balance
-    const userResult = await pool.query(
-      "SELECT balance FROM users WHERE telegram_id=$1",
-      [telegramId]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
+    // Deduct balance using ledger
+    try {
+      await updateUserBalanceWithLedger(
+        telegramId,
+        -amount,
+        "withdraw",
+        "/withdraw"
+      );
+    } catch (err) {
+      if (err.message === "Insufficient balance") {
+        return res.status(400).json({
+          success: false,
+          message: "Insufficient balance"
+        });
+      }
+      throw err;
     }
-
-    const currentBalance = Number(userResult.rows[0].balance);
-
-    if (currentBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        message: "Insufficient balance"
-      });
-    }
-
-    const newBalance = currentBalance - amount;
-
-    if (newBalance < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid balance calculation"
-      });
-    }
-
-    // Deduct balance
-    await pool.query(
-      "UPDATE users SET balance=$1 WHERE telegram_id=$2",
-      [newBalance, telegramId]
-    );
 
     // Insert withdraw request
     await pool.query(
