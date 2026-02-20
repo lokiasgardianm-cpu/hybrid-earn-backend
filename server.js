@@ -872,6 +872,94 @@ app.post(
 
 
 
+// ===== CONVERT COIN → CASH =====
+app.post("/convert", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const telegramId = req.telegramUser.id.toString();
+    const { cash_amount } = req.body;
+
+    if (!cash_amount || cash_amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid cash amount"
+      });
+    }
+
+    await client.query("BEGIN");
+
+    // Get conversion rate
+    const rateResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='coin_to_cash_rate'"
+    );
+
+    const rate = Number(rateResult.rows[0].value);
+    const requiredCoin = cash_amount * rate;
+
+    // Lock user row
+    const userResult = await client.query(
+      "SELECT coin_balance, cash_balance FROM users WHERE telegram_id=$1 FOR UPDATE",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false, message: "User not found" });
+    }
+
+    const currentCoin = Number(userResult.rows[0].coin_balance);
+    const currentCash = Number(userResult.rows[0].cash_balance);
+
+    if (currentCoin < requiredCoin) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Not enough coins"
+      });
+    }
+
+    // Deduct coin
+    await client.query(
+      "UPDATE users SET coin_balance=$1 WHERE telegram_id=$2",
+      [currentCoin - requiredCoin, telegramId]
+    );
+
+    // Add cash
+    await client.query(
+      "UPDATE users SET cash_balance=$1 WHERE telegram_id=$2",
+      [currentCash + cash_amount, telegramId]
+    );
+
+    // Insert ledger entry (conversion)
+    await client.query(
+      `INSERT INTO ledger 
+       (user_id, amount, type, source) 
+       VALUES ($1,$2,$3,$4)`,
+      [telegramId, -requiredCoin, "conversion", "coin_to_cash"]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({
+      success: true,
+      message: "Conversion successful",
+      converted_cash: cash_amount,
+      used_coin: requiredCoin
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.log("Convert error:", error);
+    res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+
 
 
 
