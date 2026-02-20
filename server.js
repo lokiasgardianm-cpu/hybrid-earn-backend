@@ -154,6 +154,57 @@ function verifyTelegramUser(req, res, next) {
 const tapTracker = new Map();
 
 
+// ===== REUSABLE LEDGER FUNCTION =====
+async function updateUserBalanceWithLedger(userId, amount, type, source) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Lock row
+    const result = await client.query(
+      "SELECT balance FROM users WHERE telegram_id = $1 FOR UPDATE",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error("User not found");
+    }
+
+    const currentBalance = Number(result.rows[0].balance);
+    const newBalance = currentBalance + amount;
+
+    if (newBalance < 0) {
+      throw new Error("Insufficient balance");
+    }
+
+    // Insert transaction log
+    await client.query(
+      `INSERT INTO transactions 
+       (user_id, type, amount, balance_before, balance_after, source)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId, type, amount, currentBalance, newBalance, source]
+    );
+
+    // Update balance
+    await client.query(
+      "UPDATE users SET balance = $1 WHERE telegram_id = $2",
+      [newBalance, userId]
+    );
+
+    await client.query("COMMIT");
+
+    return newBalance;
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
 // ================= API ROUTES =================
 
 
@@ -376,7 +427,16 @@ app.get("/referral-history/:id", verifyTelegramUser, async (req, res) => {
 
 
 // ===== AD REWARD + 5% REFERRAL BONUS =====
+
+
+
+
+
+
 // ===== SECURE AD REWARD =====
+
+
+
 app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
   try {
     const telegramId = req.telegramUser.id.toString();
@@ -393,9 +453,11 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
     }
 
     // Add reward to user
-    await pool.query(
-      "UPDATE users SET balance = balance + $1 WHERE telegram_id=$2",
-      [AD_REWARD, telegramId]
+    await updateUserBalanceWithLedger(
+      telegramId,
+      AD_REWARD,
+      "ad",
+      "/reward-ad"
     );
 
     const referrerId = userCheck.rows[0].referred_by;
@@ -404,14 +466,17 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
     if (referrerId) {
       const bonus = Math.floor(AD_REWARD * 0.05);
 
-      await pool.query(
-        "UPDATE users SET balance = balance + $1, referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
-        [bonus, referrerId]
+      await updateUserBalanceWithLedger(
+        referrerId,
+        bonus,
+        "referral",
+        "ad_bonus"
       );
 
+      // referral_earnings field আলাদা update করবে
       await pool.query(
-        "INSERT INTO referral_logs (referrer_id, from_user_id, amount, type) VALUES ($1,$2,$3,$4)",
-        [referrerId, telegramId, bonus, "ad_bonus"]
+        "UPDATE users SET referral_earnings = referral_earnings + $1 WHERE telegram_id=$2",
+        [bonus, referrerId]
       );
     }
 
@@ -464,11 +529,16 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
     const randomIndex = Math.floor(Math.random() * rewards.length);
     const reward = rewards[randomIndex];
 
-    const newBalance = Number(user.balance) + reward;
+    const newBalance = await updateUserBalanceWithLedger(
+      telegramId,
+      reward,
+      "spin",
+      "/spin"
+    );
 
     await pool.query(
-      "UPDATE users SET balance=$1, last_spin_at=NOW() WHERE telegram_id=$2",
-      [newBalance, telegramId]
+      "UPDATE users SET last_spin_at=NOW() WHERE telegram_id=$1",
+      [telegramId]
     );
 
     res.json({
@@ -518,11 +588,16 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
       }
     }
 
-    const newBalance = Number(user.balance) + DAILY_REWARD;
+    const newBalance = await updateUserBalanceWithLedger(
+      telegramId,
+      DAILY_REWARD,
+      "daily",
+      "/daily"
+    );
 
     await pool.query(
-      "UPDATE users SET balance=$1, last_daily_at=NOW() WHERE telegram_id=$2",
-      [newBalance, telegramId]
+      "UPDATE users SET last_daily_at=NOW() WHERE telegram_id=$1",
+      [telegramId]
     );
 
     res.json({
@@ -578,9 +653,11 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
     const newBalance = currentBalance + SHORTLINK_REWARD;
 
     // Update balance
-    await pool.query(
-      "UPDATE users SET balance=$1 WHERE telegram_id=$2",
-      [newBalance, telegramId]
+    await updateUserBalanceWithLedger(
+      telegramId,
+      SHORTLINK_REWARD,
+      "shortlink",
+      "/shortlink"
     );
 
     // Log reward
