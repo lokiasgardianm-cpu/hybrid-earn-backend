@@ -303,92 +303,91 @@ async function updateCashWithLedger(
 // ===== TAP ROUTE (CLEAN PG VERSION) =====
 
 // ===== SECURE TAP ROUTE =====
+
+
 app.post("/tap", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
-    const { amount } = req.body;
     const telegramId = req.telegramUser.id.toString();
 
+    await client.query("BEGIN");
 
-
-
-    // ===== ANTI-CHEAT START =====
-    const now = Date.now();
-
-    if (!tapTracker.has(telegramId)) {
-      tapTracker.set(telegramId, {
-        lastTap: now,
-        tapCount: 1,
-        firstTapTime: now
-      });
-    } else {
-      const data = tapTracker.get(telegramId);
-
-      // Minimum interval 250ms
-      if (now - data.lastTap < 250) {
-        return res.status(429).json({
-          success: false,
-          message: "Too fast"
-        });
-      }
-
-      // Reset counter every 1 second
-      if (now - data.firstTapTime > 1000) {
-        data.tapCount = 0;
-        data.firstTapTime = now;
-      }
-
-      data.tapCount++;
-
-      // Max 5 taps per second
-      if (data.tapCount > 5) {
-        return res.status(429).json({
-          success: false,
-          message: "Tap limit exceeded"
-        });
-      }
-
-      data.lastTap = now;
-      tapTracker.set(telegramId, data);
-    }
-    // ===== ANTI-CHEAT END =====
-
-
-
-
-
-
-
-
-    // Basic validation
-    if (!amount || typeof amount !== "number") {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    if (amount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
-    }
-
-    if (amount > 50) {   // Max tap limit per request
-      return res.status(400).json({ error: "Tap amount too large" });
-    }
-
-    const newBalance = await updateCoinWithLedger(
-      telegramId,
-      amount,
-      "tap",
-      "/tap"
+    // 🔒 Lock user row
+    const userResult = await client.query(
+      `SELECT daily_tap_count, last_active_date 
+       FROM users 
+       WHERE telegram_id=$1 
+       FOR UPDATE`,
+      [telegramId]
     );
+
+    if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false });
+    }
+
+    let { daily_tap_count, last_active_date } = userResult.rows[0];
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 🔁 Reset if new day
+    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+      daily_tap_count = 0;
+
+      await client.query(
+        `UPDATE users 
+         SET daily_tap_count=0, last_active_date=$1 
+         WHERE telegram_id=$2`,
+        [today, telegramId]
+      );
+    }
+
+    // 🚫 Daily limit check (MAX 480)
+    if (daily_tap_count >= 480) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Daily tap limit reached"
+      });
+    }
+
+    // 🎁 Tap reward (economy controlled later)
+    const rewardPerTap = 5;
+
+    await updateCoinWithLedger(
+      telegramId,
+      rewardPerTap,
+      "tap_reward",
+      "tap",
+      client
+    );
+
+    // ➕ Increase tap count
+    await client.query(
+      `UPDATE users 
+       SET daily_tap_count = daily_tap_count + 1 
+       WHERE telegram_id=$1`,
+      [telegramId]
+    );
+
+    await client.query("COMMIT");
 
     res.json({
       success: true,
-      balance: newBalance
+      reward: rewardPerTap
     });
 
   } catch (error) {
+    await client.query("ROLLBACK");
     console.log("Tap error:", error);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
+
+
 
 
 
@@ -482,17 +481,53 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
 
     await client.query("BEGIN");
 
-    // economy_config থেকে reward আনবো
+    // 🔒 Lock user row
+    const userResult = await client.query(
+      `SELECT daily_ad_count, last_active_date 
+       FROM users 
+       WHERE telegram_id=$1 
+       FOR UPDATE`,
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false });
+    }
+
+    let { daily_ad_count, last_active_date } = userResult.rows[0];
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 🔁 Reset if new day
+    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+      daily_ad_count = 0;
+
+      await client.query(
+        `UPDATE users 
+         SET daily_ad_count=0, last_active_date=$1 
+         WHERE telegram_id=$2`,
+        [today, telegramId]
+      );
+    }
+
+    // 🚫 Daily limit check
+    if (daily_ad_count >= 100) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Daily ad limit reached"
+      });
+    }
+
+    // 🎁 Get reward from config
     const rewardResult = await client.query(
       "SELECT value FROM economy_config WHERE key='ad_reward'"
     );
 
     const rewardAmount = Number(rewardResult.rows[0].value);
 
-
-    // 🔥 Ledger-safe coin update
-
-
+    // 💰 Add coin via ledger
     await updateCoinWithLedger(
       telegramId,
       rewardAmount,
@@ -501,14 +536,24 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
       client
     );
 
-    // 
+    // ➕ Increase count
+    await client.query(
+      `UPDATE users 
+       SET daily_ad_count = daily_ad_count + 1 
+       WHERE telegram_id=$1`,
+      [telegramId]
+    );
 
     await client.query("COMMIT");
 
-    res.json({ success: true, reward: rewardAmount });
+    res.json({
+      success: true,
+      reward: rewardAmount
+    });
 
   } catch (error) {
     await client.query("ROLLBACK");
+    console.log("Ad error:", error);
     res.status(500).json({ error: "Server error" });
   } finally {
     client.release();
@@ -521,65 +566,87 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
 
 // ===== SPIN SYSTEM =====
 app.post("/spin", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const telegramId = req.telegramUser.id.toString();
 
-    // User check
-    const userResult = await pool.query(
-      "SELECT coin_balance, last_spin_at FROM users WHERE telegram_id=$1",
+    await client.query("BEGIN");
+
+    // 🔒 Lock user row
+    const userResult = await client.query(
+      `SELECT daily_spin_count, last_active_date 
+       FROM users 
+       WHERE telegram_id=$1 
+       FOR UPDATE`,
       [telegramId]
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false });
     }
 
-    const user = userResult.rows[0];
+    let { daily_spin_count, last_active_date } = userResult.rows[0];
 
-    // 24 hour check
-    if (user.last_spin_at) {
-      const lastSpin = new Date(user.last_spin_at);
-      const now = new Date();
+    const today = new Date().toISOString().slice(0, 10);
 
-      const diffHours = (now - lastSpin) / (1000 * 60 * 60);
+    // 🔁 Reset if new day
+    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+      daily_spin_count = 0;
 
-      if (diffHours < 24) {
-        return res.status(400).json({
-          success: false,
-          message: "You already spun in last 24 hours"
-        });
-      }
+      await client.query(
+        `UPDATE users 
+         SET daily_spin_count=0, last_active_date=$1 
+         WHERE telegram_id=$2`,
+        [today, telegramId]
+      );
     }
 
-    // Random reward
-    const rewards = [50, 75, 100, 150, 200, 500];
-    const randomIndex = Math.floor(Math.random() * rewards.length);
-    const reward = rewards[randomIndex];
+    // 🚫 Daily limit check (MAX 3)
+    if (daily_spin_count >= 3) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Daily spin limit reached"
+      });
+    }
 
-    const newBalance = await updateCoinWithLedger(
+    // 🎁 Spin reward logic (random example)
+    const rewardAmount = Math.floor(Math.random() * 50) + 10;
+
+    // 💰 Add coin via ledger
+    await updateCoinWithLedger(
       telegramId,
-      reward,
+      rewardAmount,
+      "spin_reward",
       "spin",
-      "/spin"
+      client
     );
 
-    await pool.query(
-      "UPDATE users SET last_spin_at=NOW() WHERE telegram_id=$1",
+    // ➕ Increase count
+    await client.query(
+      `UPDATE users 
+       SET daily_spin_count = daily_spin_count + 1 
+       WHERE telegram_id=$1`,
       [telegramId]
     );
 
+    await client.query("COMMIT");
+
     res.json({
       success: true,
-      reward: reward,
-      balance: newBalance
+      reward: rewardAmount
     });
 
   } catch (error) {
+    await client.query("ROLLBACK");
     console.log("Spin error:", error);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
-
 
 
 
@@ -642,6 +709,8 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
 
 
 // ===== SHORTLINK SYSTEM =====
+
+
 app.post("/shortlink", verifyTelegramUser, async (req, res) => {
   const client = await pool.connect();
 
@@ -650,16 +719,53 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
     await client.query("BEGIN");
 
-    // 🔥 economy_config থেকে reward আনবো
+    // 🔒 Lock user row
+    const userResult = await client.query(
+      `SELECT daily_shortlink_count, last_active_date 
+       FROM users 
+       WHERE telegram_id=$1 
+       FOR UPDATE`,
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false });
+    }
+
+    let { daily_shortlink_count, last_active_date } = userResult.rows[0];
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 🔁 Reset if new day
+    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+      daily_shortlink_count = 0;
+
+      await client.query(
+        `UPDATE users 
+         SET daily_shortlink_count=0, last_active_date=$1 
+         WHERE telegram_id=$2`,
+        [today, telegramId]
+      );
+    }
+
+    // 🚫 Daily limit check (MAX 10)
+    if (daily_shortlink_count >= 10) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Daily shortlink limit reached"
+      });
+    }
+
+    // 🎁 Get reward from config
     const rewardResult = await client.query(
       "SELECT value FROM economy_config WHERE key='shortlink_reward'"
     );
 
     const rewardAmount = Number(rewardResult.rows[0].value);
 
-    // 🔥 Unified ledger system
-
-
+    // 💰 Add coin via ledger
     await updateCoinWithLedger(
       telegramId,
       rewardAmount,
@@ -668,12 +774,13 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
       client
     );
 
-
-
-
-
-
-
+    // ➕ Increase count
+    await client.query(
+      `UPDATE users 
+       SET daily_shortlink_count = daily_shortlink_count + 1 
+       WHERE telegram_id=$1`,
+      [telegramId]
+    );
 
     await client.query("COMMIT");
 
@@ -684,11 +791,13 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
   } catch (error) {
     await client.query("ROLLBACK");
+    console.log("Shortlink error:", error);
     res.status(500).json({ error: "Server error" });
   } finally {
     client.release();
   }
 });
+
 
 
 
