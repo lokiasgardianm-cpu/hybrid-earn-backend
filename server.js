@@ -682,56 +682,81 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
 
 // ===== WITHDRAW SYSTEM =====
+// ===== CASH WITHDRAW SYSTEM (ATOMIC) =====
 app.post("/withdraw", verifyTelegramUser, async (req, res) => {
   const client = await pool.connect();
 
   try {
     const telegramId = req.telegramUser.id.toString();
-    const { amount, method, account_number } = req.body;
+    const { cash_amount, method, account_number } = req.body;
 
-    const MIN_WITHDRAW = 1000;
-
-    if (!amount || !method || !account_number) {
-      return res.status(400).json({ error: "Missing fields" });
-    }
-
-    if (amount < MIN_WITHDRAW) {
+    if (!cash_amount || !method || !account_number) {
       return res.status(400).json({
         success: false,
-        message: "Minimum withdraw is 1000 coins"
+        message: "Missing fields"
       });
     }
 
     await client.query("BEGIN");
 
-    // 💎 Deduct balance using same transaction client
-    try {
-      await updateUserBalanceWithLedger(
-        telegramId,
-        -amount,
-        "withdraw",
-        "/withdraw",
-        client   // ⭐ IMPORTANT
-      );
-    } catch (err) {
+    // Get minimum withdraw
+    const minResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='min_withdraw_cash'"
+    );
+
+    const minWithdraw = Number(minResult.rows[0].value);
+
+    if (cash_amount < minWithdraw) {
       await client.query("ROLLBACK");
-
-      if (err.message === "Insufficient balance") {
-        return res.status(400).json({
-          success: false,
-          message: "Insufficient balance"
-        });
-      }
-
-      throw err;
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdraw is ${minWithdraw} cash`
+      });
     }
 
-    // 💎 Insert withdraw request
+    // Lock user row
+    const userResult = await client.query(
+      "SELECT cash_balance FROM users WHERE telegram_id=$1 FOR UPDATE",
+      [telegramId]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    const currentCash = Number(userResult.rows[0].cash_balance);
+
+    if (currentCash < cash_amount) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient cash balance"
+      });
+    }
+
+    // Deduct cash
     await client.query(
-      `INSERT INTO withdraw_requests 
-       (user_id, amount, method, account_number, status) 
+      "UPDATE users SET cash_balance=$1 WHERE telegram_id=$2",
+      [currentCash - cash_amount, telegramId]
+    );
+
+    // Ledger entry
+    await client.query(
+      `INSERT INTO ledger (user_id, amount, type, source)
+       VALUES ($1,$2,$3,$4)`,
+      [telegramId, -cash_amount, "withdraw", "cash_withdraw"]
+    );
+
+    // Insert withdraw request
+    await client.query(
+      `INSERT INTO withdraw_requests
+       (user_id, amount, method, account_number, status)
        VALUES ($1,$2,$3,$4,'pending')`,
-      [telegramId, amount, method, account_number]
+      [telegramId, cash_amount, method, account_number]
     );
 
     await client.query("COMMIT");
