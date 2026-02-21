@@ -51,7 +51,7 @@ bot.start(async (ctx) => {
         [
           telegramId,
           username,
-          200,
+          1000,
           refId && refId !== telegramId ? refId : null
         ]
       );
@@ -66,9 +66,15 @@ bot.start(async (ctx) => {
 
         if (refCheck.rows.length > 0) {
 
+          const bonusResult = await pool.query(
+            "SELECT value FROM economy_config WHERE key='referral_join_bonus'"
+          );
+
+          const joinBonus = Number(bonusResult.rows[0].value);
+
           await updateCoinWithLedger(
             refId,
-            1000,
+            joinBonus,
             "referral",
             "join_bonus"
           );
@@ -80,7 +86,7 @@ bot.start(async (ctx) => {
 
           await pool.query(
             "INSERT INTO referral_logs (referrer_id, from_user_id, amount, type) VALUES ($1,$2,$3,$4)",
-            [refId, telegramId, 1000, "join_bonus"]
+            [refId, telegramId, joinBonus, "join_bonus"]
           );
 
         }
@@ -239,7 +245,13 @@ async function updateCoinWithLedger(
 
       if (referrerId) {
 
-        const referralBonus = Math.floor(amount * 0.01);
+        const percentResult = await client.query(
+          "SELECT value FROM economy_config WHERE key='referral_percent'"
+        );
+
+        const percent = Number(percentResult.rows[0].value);
+
+        const referralBonus = Math.floor(amount * (percent / 100));
 
         if (referralBonus > 0) {
 
@@ -398,7 +410,11 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
     }
 
     // 🎁 Tap reward (economy controlled later)
-    const rewardPerTap = 5;
+    const rewardResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='tap_reward'"
+    );
+
+    const rewardPerTap = Number(rewardResult.rows[0].value);
 
     await updateCoinWithLedger(
       telegramId,
@@ -658,7 +674,19 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
     }
 
     // 🎁 Spin reward logic (random example)
-    const rewardAmount = Math.floor(Math.random() * 50) + 10;
+    const minResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='spin_min_reward'"
+    );
+
+    const maxResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='spin_max_reward'"
+    );
+
+    const minReward = Number(minResult.rows[0].value);
+    const maxReward = Number(maxResult.rows[0].value);
+
+    const rewardAmount =
+      Math.floor(Math.random() * (maxReward - minReward + 1)) + minReward;
 
     // 💰 Add coin via ledger
     await updateCoinWithLedger(
@@ -904,6 +932,7 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
         message: "Insufficient cash balance"
       });
     }
+
 
     // Deduct cash
     await client.query(
