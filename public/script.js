@@ -1,30 +1,23 @@
 console.log("JS Loaded ✅");
+let tg = null;
+
+if (typeof window !== "undefined" &&
+    window.Telegram &&
+    window.Telegram.WebApp) {
+
+    tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.ready();
+    console.log("Telegram detected ✅");
+
+} else {
+    console.log("Telegram not detected 🌍");
+}
+
 
 
 // ===== SAFE TELEGRAM DETECTION =====
 
-
-const tg = window.Telegram.WebApp;
-
-tg.expand();
-tg.ready();
-
-if (typeof window !== "undefined") {
-    if (window.Telegram && window.Telegram.WebApp) {
-        tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
-
-        console.log("Telegram detected ✅");
-    } else {
-        console.log("Telegram not detected (browser mode) 🌍");
-    }
-}
-
-
-if (!tg) {
-    console.log("Open inside Telegram to use earning features.");
-}
 
 
 
@@ -55,7 +48,6 @@ function showPage(pageId) {
         loadReferralHistory();
     }
 }
-
 
 
 
@@ -112,7 +104,7 @@ function tapCoin(event) {
         .then(data => {
 
             if (data.success) {
-                coins = data.balance;   // backend থেকে নতুন balance
+                coins = data.coin_balance;   // backend থেকে নতুন balance
                 updateUI();
             }
 
@@ -537,7 +529,7 @@ function loadUserData() {
         .then(res => res.json())
         .then(data => {
 
-            if (data.balance !== undefined) {
+            if (data.success) {
 
                 coins = data.coin_balance || data.balance;
                 cash = data.cash_balance || 0;
