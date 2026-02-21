@@ -128,7 +128,8 @@ function tapCoin(event) {
 
 function flyCoinToBalance(startX, startY) {
 
-    const balanceEl = document.getElementById("balanceDisplay");
+    const balanceEl = document.getElementById("coinBalance");
+    if (!balanceEl) return;
     const rect = balanceEl.getBoundingClientRect();
 
     const coin = document.createElement("div");

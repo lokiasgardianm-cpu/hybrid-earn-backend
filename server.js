@@ -503,9 +503,16 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
 
     await client.query("COMMIT");
 
+    // Get updated balance
+    const balanceResult = await client.query(
+      "SELECT coin_balance FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
     res.json({
       success: true,
-      reward: rewardPerTap
+      reward: rewardPerTap,
+      coin_balance: balanceResult.rows[0].coin_balance
     });
 
   } catch (error) {
