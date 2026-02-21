@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const path = require('path');
 const { Telegraf } = require("telegraf");
 const { Pool } = require("pg");
 const cors = require("cors");
@@ -10,12 +11,16 @@ const crypto = require("crypto");
 
 
 
-
-
 console.log("🚀 Server Starting...");
 
 const app = express();
 app.use(express.json());
+// Serve frontend
+app.use(express.static(path.join(__dirname, '../hybrid-earn-app')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../hybrid-earn-app/index.html'));
+});
 app.use(cors());
 
 // ===== TELEGRAM BOT =====
@@ -255,6 +260,11 @@ async function updateCoinWithLedger(
           "SELECT value FROM economy_config WHERE key='referral_percent'"
         );
 
+        if (percentResult.rows.length === 0) {
+          throw new Error("referral_percent not set");
+        }
+
+
         const percent = Number(percentResult.rows[0].value);
 
         const referralBonus = Math.floor(amount * (percent / 100));
@@ -422,6 +432,10 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
     const rewardResult = await client.query(
       "SELECT value FROM economy_config WHERE key='tap_reward'"
     );
+
+    if (rewardResult.rows.length === 0) {
+      throw new Error("tap_reward not set in economy_config");
+    }
 
     const rewardPerTap = Number(rewardResult.rows[0].value);
 
@@ -598,6 +612,10 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
       "SELECT value FROM economy_config WHERE key='ad_reward'"
     );
 
+    if (rewardResult.rows.length === 0) {
+      throw new Error("ad_reward not set in economy_config");
+    }
+
     const rewardAmount = Number(rewardResult.rows[0].value);
 
     // 💰 Add coin via ledger
@@ -693,9 +711,17 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
       "SELECT value FROM economy_config WHERE key='spin_min_reward'"
     );
 
+    if (minResult.rows.length === 0) {
+      throw new Error("spin_min_reward not set");
+    }
+
     const maxResult = await client.query(
       "SELECT value FROM economy_config WHERE key='spin_max_reward'"
     );
+
+    if (maxResult.rows.length === 0) {
+      throw new Error("spin_max_reward not set");
+    }
 
     const minReward = Number(minResult.rows[0].value);
     const maxReward = Number(maxResult.rows[0].value);
@@ -749,6 +775,10 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
     const rewardResult = await client.query(
       "SELECT value FROM economy_config WHERE key='daily_reward'"
     );
+
+    if (rewardResult.rows.length === 0) {
+      throw new Error("daily_reward not set");
+    }
 
     const DAILY_REWARD = Number(rewardResult.rows[0].value);
 
@@ -867,6 +897,10 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
       "SELECT value FROM economy_config WHERE key='shortlink_reward'"
     );
 
+    if (rewardResult.rows.length === 0) {
+      throw new Error("shortlink_reward not set");
+    }
+
     const rewardAmount = Number(rewardResult.rows[0].value);
 
     // 💰 Add coin via ledger
@@ -931,6 +965,10 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
     const minResult = await client.query(
       "SELECT value FROM economy_config WHERE key='min_withdraw_cash'"
     );
+
+    if (minResult.rows.length === 0) {
+      throw new Error("min_withdraw_cash not set");
+    }
 
     const minWithdraw = Number(minResult.rows[0].value);
 
@@ -1145,11 +1183,17 @@ app.post(
         return res.status(400).json({ success: false });
       }
 
-      await pool.query(
-        "UPDATE economy_config SET value=$1 WHERE key=$2",
+      const updateResult = await pool.query(
+        "UPDATE economy_config SET value=$1 WHERE key=$2 RETURNING *",
         [value, key]
       );
 
+      if (updateResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid config key"
+        });
+      }
       res.json({ success: true });
 
     } catch (err) {
@@ -1180,6 +1224,10 @@ app.post("/convert", verifyTelegramUser, async (req, res) => {
     const rateResult = await client.query(
       "SELECT value FROM economy_config WHERE key='coin_to_cash_rate'"
     );
+
+    if (rateResult.rows.length === 0) {
+      throw new Error("coin_to_cash_rate not set");
+    }
 
     const rate = Number(rateResult.rows[0].value);
     const requiredCoin = cash_amount * rate;
@@ -1242,6 +1290,11 @@ app.post("/convert", verifyTelegramUser, async (req, res) => {
 
 
 
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
+
+
+
 
 
 
@@ -1249,8 +1302,10 @@ app.post("/convert", verifyTelegramUser, async (req, res) => {
 
 // ================= START SERVER =================
 bot.launch();
-app.listen(5000, () => {
-  console.log("✅ API running on port 5000");
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`✅ API running on port ${PORT}`);
 });
 
 
