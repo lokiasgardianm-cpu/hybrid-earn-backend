@@ -305,7 +305,7 @@ function openShortlink() {
                 return;
             }
 
-            coins = data.balance;
+            coins = data.coin_balance;
             updateUI();
 
             alert("🔗 +" + data.reward + " coins");
@@ -340,7 +340,7 @@ function dailyBonus() {
                 return;
             }
 
-            coins = data.balance;
+            coins = data.coin_balance;
             updateUI();
 
             alert("🎁 You received " + data.reward + " coins!");
@@ -387,7 +387,7 @@ function startSpin() {
 
             setTimeout(() => {
 
-                coins = data.balance;  // backend balance
+                 coins = data.coin_balance; // backend balance
                 updateUI();
                 coinBurst();
 
