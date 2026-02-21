@@ -70,6 +70,10 @@ bot.start(async (ctx) => {
             "SELECT value FROM economy_config WHERE key='referral_join_bonus'"
           );
 
+          if (bonusResult.rows.length === 0) {
+            throw new Error("referral_join_bonus not set in economy_config");
+          }
+
           const joinBonus = Number(bonusResult.rows[0].value);
 
           await updateCoinWithLedger(
@@ -166,7 +170,6 @@ function verifyTelegramUser(req, res, next) {
 }
 
 
-
 async function verifyAdmin(req, res, next) {
   try {
     const telegramId = req.telegramUser.id.toString();
@@ -234,7 +237,10 @@ async function updateCoinWithLedger(
     );
 
     // ===== LIFETIME 1% REFERRAL BONUS =====
-    if (amount > 0 && type !== "referral_bonus") {
+    if (
+      amount > 0 &&
+      ["tap_reward", "reward_ad", "spin_reward", "shortlink_reward", "daily"].includes(type)
+    ) {
 
       const refResult = await client.query(
         "SELECT referred_by FROM users WHERE telegram_id=$1",
@@ -372,7 +378,7 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
 
     // 🔒 Lock user row
     const userResult = await client.query(
-      `SELECT daily_tap_count, last_active_date 
+      `SELECT daily_tap_count, last_tap_date 
        FROM users 
        WHERE telegram_id=$1 
        FOR UPDATE`,
@@ -384,17 +390,20 @@ app.post("/tap", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    let { daily_tap_count, last_active_date } = userResult.rows[0];
+    let { daily_tap_count, last_tap_date } = userResult.rows[0];
 
     const today = new Date().toISOString().slice(0, 10);
 
     // 🔁 Reset if new day
-    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+    if (
+      !last_tap_date ||
+      new Date(last_tap_date).toISOString().slice(0, 10) !== today
+    ) {
       daily_tap_count = 0;
 
       await client.query(
         `UPDATE users 
-         SET daily_tap_count=0, last_active_date=$1 
+         SET daily_tap_count=0, last_tap_date=$1 
          WHERE telegram_id=$2`,
         [today, telegramId]
       );
@@ -544,7 +553,7 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
 
     // 🔒 Lock user row
     const userResult = await client.query(
-      `SELECT daily_ad_count, last_active_date 
+      `SELECT daily_ad_count, last_ad_date 
        FROM users 
        WHERE telegram_id=$1 
        FOR UPDATE`,
@@ -556,17 +565,20 @@ app.post("/reward-ad", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    let { daily_ad_count, last_active_date } = userResult.rows[0];
+    let { daily_ad_count, last_ad_date } = userResult.rows[0];
 
     const today = new Date().toISOString().slice(0, 10);
 
     // 🔁 Reset if new day
-    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+    if (
+      !last_ad_date ||
+      new Date(last_ad_date).toISOString().slice(0, 10) !== today
+    ) {
       daily_ad_count = 0;
 
       await client.query(
         `UPDATE users 
-         SET daily_ad_count=0, last_active_date=$1 
+         SET daily_ad_count=0, last_ad_date=$1 
          WHERE telegram_id=$2`,
         [today, telegramId]
       );
@@ -636,7 +648,7 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
 
     // 🔒 Lock user row
     const userResult = await client.query(
-      `SELECT daily_spin_count, last_active_date 
+      `SELECT daily_spin_count, last_spin_date 
        FROM users 
        WHERE telegram_id=$1 
        FOR UPDATE`,
@@ -648,17 +660,20 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    let { daily_spin_count, last_active_date } = userResult.rows[0];
+    let { daily_spin_count, last_spin_date } = userResult.rows[0];
 
     const today = new Date().toISOString().slice(0, 10);
 
     // 🔁 Reset if new day
-    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+    if (
+      !last_spin_date ||
+      new Date(last_spin_date).toISOString().slice(0, 10) !== today
+    ) {
       daily_spin_count = 0;
 
       await client.query(
         `UPDATE users 
-         SET daily_spin_count=0, last_active_date=$1 
+         SET daily_spin_count=0, last_spin_date=$1 
          WHERE telegram_id=$2`,
         [today, telegramId]
       );
@@ -723,31 +738,39 @@ app.post("/spin", verifyTelegramUser, async (req, res) => {
 
 
 
-// ===== DAILY BONUS SYSTEM =====
 app.post("/daily", verifyTelegramUser, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const telegramId = req.telegramUser.id.toString();
-    const DAILY_REWARD = 100; // তুমি চাইলে change করতে পারো
 
-    const userResult = await pool.query(
-      "SELECT coin_balance, last_daily_at FROM users WHERE telegram_id=$1",
+    await client.query("BEGIN");
+
+    const rewardResult = await client.query(
+      "SELECT value FROM economy_config WHERE key='daily_reward'"
+    );
+
+    const DAILY_REWARD = Number(rewardResult.rows[0].value);
+
+    const userResult = await client.query(
+      "SELECT last_daily_at FROM users WHERE telegram_id=$1 FOR UPDATE",
       [telegramId]
     );
 
     if (userResult.rows.length === 0) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ error: "User not found" });
     }
 
     const user = userResult.rows[0];
 
-    // 24 hour check
     if (user.last_daily_at) {
       const lastDaily = new Date(user.last_daily_at);
       const now = new Date();
-
       const diffHours = (now - lastDaily) / (1000 * 60 * 60);
 
       if (diffHours < 24) {
+        await client.query("ROLLBACK");
         return res.status(400).json({
           success: false,
           message: "Daily already claimed"
@@ -755,27 +778,32 @@ app.post("/daily", verifyTelegramUser, async (req, res) => {
       }
     }
 
-    const newBalance = await updateCoinWithLedger(
+    await updateCoinWithLedger(
       telegramId,
       DAILY_REWARD,
       "daily",
-      "/daily"
+      "/daily",
+      client
     );
 
-    await pool.query(
+    await client.query(
       "UPDATE users SET last_daily_at=NOW() WHERE telegram_id=$1",
       [telegramId]
     );
 
+    await client.query("COMMIT");
+
     res.json({
       success: true,
-      reward: DAILY_REWARD,
-      balance: newBalance
+      reward: DAILY_REWARD
     });
 
   } catch (error) {
+    await client.query("ROLLBACK");
     console.log("Daily error:", error);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -794,7 +822,7 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
 
     // 🔒 Lock user row
     const userResult = await client.query(
-      `SELECT daily_shortlink_count, last_active_date 
+      `SELECT daily_shortlink_count, last_shortlink_date 
        FROM users 
        WHERE telegram_id=$1 
        FOR UPDATE`,
@@ -806,17 +834,20 @@ app.post("/shortlink", verifyTelegramUser, async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    let { daily_shortlink_count, last_active_date } = userResult.rows[0];
+    let { daily_shortlink_count, last_shortlink_date } = userResult.rows[0];
 
     const today = new Date().toISOString().slice(0, 10);
 
     // 🔁 Reset if new day
-    if (!last_active_date || last_active_date.toISOString().slice(0, 10) !== today) {
+    if (
+      !last_shortlink_date ||
+      new Date(last_shortlink_date).toISOString().slice(0, 10) !== today
+    ) {
       daily_shortlink_count = 0;
 
       await client.query(
         `UPDATE users 
-         SET daily_shortlink_count=0, last_active_date=$1 
+         SET daily_shortlink_count=0, last_shortlink_date=$1 
          WHERE telegram_id=$2`,
         [today, telegramId]
       );
@@ -883,9 +914,11 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
 
   try {
     const telegramId = req.telegramUser.id.toString();
-    const { cash_amount, method, account_number } = req.body;
+    const cash_amount = Number(req.body.cash_amount);
+    const { method, account_number } = req.body;
 
-    if (!cash_amount || !method || !account_number) {
+    if (isNaN(cash_amount) || cash_amount <= 0 || !method || !account_number) {
+
       return res.status(400).json({
         success: false,
         message: "Missing fields"
@@ -935,16 +968,12 @@ app.post("/withdraw", verifyTelegramUser, async (req, res) => {
 
 
     // Deduct cash
-    await client.query(
-      "UPDATE users SET cash_balance=$1 WHERE telegram_id=$2",
-      [currentCash - cash_amount, telegramId]
-    );
-
-    // Ledger entry
-    await client.query(
-      `INSERT INTO ledger (user_id, amount, type, source)
-       VALUES ($1,$2,$3,$4)`,
-      [telegramId, -cash_amount, "withdraw", "cash_withdraw"]
+    await updateCashWithLedger(
+      telegramId,
+      -cash_amount,
+      "withdraw",
+      "cash_withdraw",
+      client
     );
 
     // Insert withdraw request
@@ -979,6 +1008,8 @@ app.post(
   verifyTelegramUser,
   verifyAdmin,
   async (req, res) => {
+    const client = await pool.connect();
+
     try {
       const { request_id } = req.body;
 
@@ -989,22 +1020,27 @@ app.post(
         });
       }
 
-      const requestResult = await pool.query(
-        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending'",
+      await client.query("BEGIN");
+
+      const requestResult = await client.query(
+        "SELECT * FROM withdraw_requests WHERE id=$1 AND status='pending' FOR UPDATE",
         [request_id]
       );
 
       if (requestResult.rows.length === 0) {
+        await client.query("ROLLBACK");
         return res.status(400).json({
           success: false,
           message: "Invalid or already processed request"
         });
       }
 
-      await pool.query(
+      await client.query(
         "UPDATE withdraw_requests SET status='approved' WHERE id=$1",
         [request_id]
       );
+
+      await client.query("COMMIT");
 
       res.json({
         success: true,
@@ -1012,8 +1048,11 @@ app.post(
       });
 
     } catch (error) {
+      await client.query("ROLLBACK");
       console.log("Approve error:", error);
       res.status(500).json({ error: "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
@@ -1093,15 +1132,42 @@ app.post(
 
 
 
+// ===== ADMIN UPDATE ECONOMY CONFIG =====
+app.post(
+  "/admin/update-config",
+  verifyTelegramUser,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { key, value } = req.body;
+
+      if (!key || value === undefined) {
+        return res.status(400).json({ success: false });
+      }
+
+      await pool.query(
+        "UPDATE economy_config SET value=$1 WHERE key=$2",
+        [value, key]
+      );
+
+      res.json({ success: true });
+
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+
+
 // ===== CONVERT COIN → CASH =====
 app.post("/convert", verifyTelegramUser, async (req, res) => {
   const client = await pool.connect();
 
   try {
     const telegramId = req.telegramUser.id.toString();
-    const { cash_amount } = req.body;
+    const cash_amount = Number(req.body.cash_amount);
 
-    if (!cash_amount || cash_amount <= 0) {
+    if (isNaN(cash_amount) || cash_amount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid cash amount"
@@ -1130,7 +1196,6 @@ app.post("/convert", verifyTelegramUser, async (req, res) => {
     }
 
     const currentCoin = Number(userResult.rows[0].coin_balance);
-    const currentCash = Number(userResult.rows[0].cash_balance);
 
     if (currentCoin < requiredCoin) {
       await client.query("ROLLBACK");
@@ -1140,24 +1205,20 @@ app.post("/convert", verifyTelegramUser, async (req, res) => {
       });
     }
 
-    // Deduct coin
-    await client.query(
-      "UPDATE users SET coin_balance=$1 WHERE telegram_id=$2",
-      [currentCoin - requiredCoin, telegramId]
+    await updateCoinWithLedger(
+      telegramId,
+      -requiredCoin,
+      "conversion",
+      "coin_to_cash",
+      client
     );
 
-    // Add cash
-    await client.query(
-      "UPDATE users SET cash_balance=$1 WHERE telegram_id=$2",
-      [currentCash + cash_amount, telegramId]
-    );
-
-    // Insert ledger entry (conversion)
-    await client.query(
-      `INSERT INTO ledger 
-       (user_id, amount, type, source) 
-       VALUES ($1,$2,$3,$4)`,
-      [telegramId, -requiredCoin, "conversion", "coin_to_cash"]
+    await updateCashWithLedger(
+      telegramId,
+      cash_amount,
+      "conversion",
+      "coin_to_cash",
+      client
     );
 
     await client.query("COMMIT");
