@@ -130,11 +130,11 @@ bot.start(async (ctx) => {
 });
 
 
-
 function verifyTelegramWebApp(initData) {
-  const botToken = process.env.BOT_TOKEN;
+  const crypto = require("crypto");
 
   const urlParams = new URLSearchParams(initData);
+
   const hash = urlParams.get("hash");
   urlParams.delete("hash");
 
@@ -150,7 +150,7 @@ function verifyTelegramWebApp(initData) {
 
   const secretKey = crypto
     .createHmac("sha256", "WebAppData")
-    .update(botToken)
+    .update(process.env.BOT_TOKEN)
     .digest();
 
   const calculatedHash = crypto
@@ -162,24 +162,25 @@ function verifyTelegramWebApp(initData) {
 }
 
 
-function verifyTelegramUser(req, res, next) {
 
+function verifyTelegramUser(req, res, next) {
   const initData = req.body.initData;
 
-  // 🔥 Telegram থেকে এলে real user use করবে
-  if (initData) {
-    try {
-      const urlParams = new URLSearchParams(initData);
-      const user = JSON.parse(urlParams.get("user"));
-      req.telegramUser = user;
-      return next();
-    } catch (err) {
-      console.log("Init parse error");
-    }
+  if (!initData) {
+    return res.status(401).json({ error: "No initData provided" });
   }
 
-  // 🔥 Browser test mode fallback
-  req.telegramUser = { id: 999999 };
+  const isValid = verifyTelegramWebApp(initData);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Invalid Telegram data" });
+  }
+
+  const urlParams = new URLSearchParams(initData);
+  const user = JSON.parse(urlParams.get("user"));
+
+  req.telegramUser = user;
+
   next();
 }
 
