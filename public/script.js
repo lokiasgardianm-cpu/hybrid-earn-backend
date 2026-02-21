@@ -75,24 +75,7 @@ let upgradeCost = 500;
 
 
 
-function tapCoin(event) {
-
-    if (energy <= 0) {
-
-        let container = document.querySelector(".page-container");
-
-        container.classList.add("energy-low");
-
-        setTimeout(() => {
-            container.classList.remove("energy-low");
-        }, 400);
-
-        return;
-    }
-
-
-
-    energy--;
+function tapCoin() {
 
     fetch("https://hybrid-earn-backend.onrender.com/tap", {
         method: "POST",
@@ -101,35 +84,23 @@ function tapCoin(event) {
             "x-telegram-init-data": tg ? tg.initData : ""
         },
         body: JSON.stringify({
-            initData: tg ? tg.initData : null,
+            initData: tg ? tg.initData : null
         })
+    })
+    .then(res => res.json())
+    .then(data => {
+
+        if (!data.success) {
+            alert(data.message || "Tap failed");
+            return;
+        }
+
+        coins = data.coin_balance;  // ✅ ALWAYS backend balance use করো
+        updateUI();
 
     })
-        .then(res => res.json())
-        .then(data => {
-
-            if (data.success) {
-                coins = data.coin_balance;   // backend থেকে নতুন balance
-                updateUI();
-            }
-
-        })
-        .catch(err => console.log("Tap error:", err));
-
-
-
-
-
-
-
-    let btn = event.target;
-    let rect = btn.getBoundingClientRect();
-    tapEffect(rect.left + rect.width / 2, rect.top, tapPower);
-    flyCoinToBalance(rect.left + rect.width / 2, rect.top);
-
+    .catch(err => console.log("Tap error:", err));
 }
-
-
 
 function flyCoinToBalance(startX, startY) {
 
@@ -541,10 +512,10 @@ function loadUserData() {
 
             if (data.success) {
 
-                coins = data.coin_balance || data.balance;
-                cash = data.cash_balance || 0;
-                refCount = data.referrals || 0;
-                refEarn = data.referral_earnings || 0;
+                coins = data.coin_balance;
+                cash = data.cash_balance;
+                refCount = data.referrals;
+                refEarn = data.referral_earnings;
 
                 updateUI();
 
@@ -780,30 +751,31 @@ function convertCoin() {
 
     fetch("https://hybrid-earn-backend.onrender.com/convert", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null,
-            amount: amount
+            cash_amount: amount   // ✅ FIXED
         })
     })
-        .then(res => res.json())
-        .then(data => {
+    .then(res => res.json())
+    .then(data => {
 
-            if (!data.success) {
-                alert(data.message || "Convert failed");
-                return;
-            }
+        if (!data.success) {
+            alert(data.message || "Convert failed");
+            return;
+        }
 
-            coins = data.coin_balance || data.balance;
-            cash = data.cash_balance;
+        // 🔥 সবচেয়ে safe way
+        loadUserData();
 
-            updateUI();
-            alert("Conversion successful!");
+        alert("Conversion successful!");
 
-        })
-        .catch(err => console.log("Convert error:", err));
+    })
+    .catch(err => console.log("Convert error:", err));
 }
-
 
 
 
