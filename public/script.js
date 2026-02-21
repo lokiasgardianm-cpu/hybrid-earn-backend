@@ -1,5 +1,7 @@
 console.log("JS Loaded ✅");
 
+alert("TG: " + (window.Telegram ? "YES" : "NO"));
+
 
 let tg = null;
 
