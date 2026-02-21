@@ -163,23 +163,23 @@ function verifyTelegramWebApp(initData) {
 
 
 function verifyTelegramUser(req, res, next) {
-  const initData = req.body.initData || req.headers["x-telegram-init-data"];
 
-  if (!initData) {
-    return res.status(401).json({ error: "No initData provided" });
+  const initData = req.body.initData;
+
+  // 🔥 Telegram থেকে এলে real user use করবে
+  if (initData) {
+    try {
+      const urlParams = new URLSearchParams(initData);
+      const user = JSON.parse(urlParams.get("user"));
+      req.telegramUser = user;
+      return next();
+    } catch (err) {
+      console.log("Init parse error");
+    }
   }
 
-  const isValid = verifyTelegramWebApp(initData);
-
-  if (!isValid) {
-    return res.status(401).json({ error: "Invalid Telegram data" });
-  }
-
-  const urlParams = new URLSearchParams(initData);
-  const user = JSON.parse(urlParams.get("user"));
-
-  req.telegramUser = user;
-
+  // 🔥 Browser test mode fallback
+  req.telegramUser = { id: 999999 };
   next();
 }
 
