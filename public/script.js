@@ -1,4 +1,6 @@
 console.log("JS Loaded ✅");
+
+
 let tg = null;
 
 if (typeof window !== "undefined" &&
@@ -96,7 +98,7 @@ function tapCoin(event) {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-    initData: tg ? tg.initDataUnsafe : null,
+    initData: tg ? tg.initData : null,
 })
 
     })
@@ -254,7 +256,7 @@ function watchAd() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                initData: tg ? tg.initDataUnsafe : null
+                initData: tg ? tg.initData : null
             })
 
         })
@@ -285,7 +287,7 @@ function openShortlink() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -319,7 +321,7 @@ function dailyBonus() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -362,7 +364,7 @@ function startSpin() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -491,11 +493,11 @@ function copyRef() {
 // ===== REFERRAL LINK GENERATOR =====
 function generateRefLink() {
 
-    if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+    if (!tg || !tg.initData || !tg.initData.user) return;
 
     let botUsername = "EliteLuxeBot";
 
-    let telegramId = tg.initDataUnsafe.user.id;
+    let telegramId = tg.initData.user.id;
 
     let link = "https://t.me/" + botUsername + "?start=" + telegramId;
 
@@ -524,7 +526,7 @@ function loadUserData() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -573,19 +575,17 @@ window.addEventListener("DOMContentLoaded", function () {
 // ===== LOAD REFERRAL LIST =====
 function loadReferralList() {
 
-    fetch("https://hybrid-earn-backend.onrender.com/referrals", {
-        method: "POST",
+    if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+
+    const userId = tg.initDataUnsafe.user.id;
+
+    fetch("https://hybrid-earn-backend.onrender.com/referrals/" + userId, {
+        method: "GET",
         headers: {
             "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
-        })
+        }
     })
         .then(res => res.json())
-
-
-
         .then(data => {
 
             let container = document.getElementById("refList");
@@ -593,7 +593,7 @@ function loadReferralList() {
 
             container.innerHTML = "";
 
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 container.innerHTML = "<p>No referrals yet</p>";
                 return;
             }
@@ -605,7 +605,7 @@ function loadReferralList() {
 
                 div.innerText =
                     (user.username ? "@" + user.username : user.telegram_id) +
-                    " | Balance: " + user.balance;
+                    " | Balance: " + user.coin_balance;
 
                 container.appendChild(div);
             });
@@ -621,17 +621,17 @@ function loadReferralList() {
 // ===== LOAD REFERRAL HISTORY =====
 function loadReferralHistory() {
 
-    fetch("https://hybrid-earn-backend.onrender.com/referral-history", {
-        method: "POST",
+    if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+
+    const userId = tg.initDataUnsafe.user.id;
+
+    fetch("https://hybrid-earn-backend.onrender.com/referral-history/" + userId, {
+        method: "GET",
         headers: {
             "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null
-        })
+        }
     })
         .then(res => res.json())
-
         .then(data => {
 
             let container = document.getElementById("refHistory");
@@ -639,7 +639,7 @@ function loadReferralHistory() {
 
             container.innerHTML = "";
 
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 container.innerHTML = "<p>No history yet</p>";
                 return;
             }
@@ -651,7 +651,7 @@ function loadReferralHistory() {
 
                 let typeText = item.type === "join_bonus"
                     ? "New Referral Bonus"
-                    : "Ad Bonus";
+                    : "Referral Bonus";
 
                 div.innerText =
                     "+" + item.amount + " coins | " +
@@ -664,7 +664,6 @@ function loadReferralHistory() {
         })
         .catch(err => console.log("History error:", err));
 }
-
 
 
 
@@ -741,7 +740,7 @@ function submitWithdraw() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null,
+            initData: tg ? tg.initData : null,
             amount: amount,
             method: method,
             account_number: account
@@ -782,7 +781,7 @@ function convertCoin() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            initData: tg ? tg.initDataUnsafe : null,
+            initData: tg ? tg.initData : null,
             amount: amount
         })
     })
