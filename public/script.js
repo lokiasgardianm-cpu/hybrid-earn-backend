@@ -95,11 +95,12 @@ function tapCoin(event) {
     fetch("https://hybrid-earn-backend.onrender.com/tap", {
         method: "POST",
         headers: {
-            "Content-Type": "application/json"
-        },
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
         body: JSON.stringify({
-    initData: tg ? tg.initData : null,
-})
+            initData: tg ? tg.initData : null,
+        })
 
     })
         .then(res => res.json())
@@ -254,7 +255,10 @@ function watchAd() {
 
         fetch("https://hybrid-earn-backend.onrender.com/reward-ad", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
             body: JSON.stringify({
                 initData: tg ? tg.initData : null
             })
@@ -284,8 +288,9 @@ function openShortlink() {
     fetch("https://hybrid-earn-backend.onrender.com/shortlink", {
         method: "POST",
         headers: {
-            "Content-Type": "application/json"
-        },
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -318,8 +323,9 @@ function dailyBonus() {
     fetch("https://hybrid-earn-backend.onrender.com/daily", {
         method: "POST",
         headers: {
-            "Content-Type": "application/json"
-        },
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -361,8 +367,9 @@ function startSpin() {
     fetch("https://hybrid-earn-backend.onrender.com/spin", {
         method: "POST",
         headers: {
-            "Content-Type": "application/json"
-        },
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -523,8 +530,9 @@ function loadUserData() {
     fetch("https://hybrid-earn-backend.onrender.com/user", {
         method: "POST",
         headers: {
-            "Content-Type": "application/json"
-        },
+    "Content-Type": "application/json",
+    "x-telegram-init-data": tg ? tg.initData : ""
+},
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -572,99 +580,93 @@ window.addEventListener("DOMContentLoaded", function () {
 
 
 
-// ===== LOAD REFERRAL LIST =====
 function loadReferralList() {
 
-    if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+    if (!tg || !tg.initDataUnsafe?.user) return;
 
     const userId = tg.initDataUnsafe.user.id;
 
     fetch("https://hybrid-earn-backend.onrender.com/referrals/" + userId, {
         method: "GET",
         headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg.initData
         }
     })
-        .then(res => res.json())
-        .then(data => {
+    .then(res => res.json())
+    .then(data => {
 
-            let container = document.getElementById("refList");
-            if (!container) return;
+        let container = document.getElementById("refList");
+        if (!container) return;
 
-            container.innerHTML = "";
+        container.innerHTML = "";
 
-            if (!data || data.length === 0) {
-                container.innerHTML = "<p>No referrals yet</p>";
-                return;
-            }
+        if (!data || data.length === 0) {
+            container.innerHTML = "<p>No referrals yet</p>";
+            return;
+        }
 
-            data.forEach(user => {
+        data.forEach(user => {
 
-                let div = document.createElement("div");
-                div.className = "ref-user";
+            let div = document.createElement("div");
+            div.className = "ref-user";
 
-                div.innerText =
-                    (user.username ? "@" + user.username : user.telegram_id) +
-                    " | Balance: " + user.coin_balance;
+            div.innerText =
+                (user.username ? "@" + user.username : user.telegram_id) +
+                " | Balance: " + user.coin_balance;
 
-                container.appendChild(div);
-            });
+            container.appendChild(div);
+        });
 
-        })
-        .catch(err => console.log("Referral list error:", err));
+    })
+    .catch(err => console.log("Referral list error:", err));
 }
 
 
 
 
-
-// ===== LOAD REFERRAL HISTORY =====
 function loadReferralHistory() {
 
-    if (!tg || !tg.initDataUnsafe || !tg.initDataUnsafe.user) return;
+    if (!tg || !tg.initDataUnsafe?.user) return;
 
     const userId = tg.initDataUnsafe.user.id;
 
     fetch("https://hybrid-earn-backend.onrender.com/referral-history/" + userId, {
         method: "GET",
         headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg.initData
         }
     })
-        .then(res => res.json())
-        .then(data => {
+    .then(res => res.json())
+    .then(data => {
 
-            let container = document.getElementById("refHistory");
-            if (!container) return;
+        let container = document.getElementById("refHistory");
+        if (!container) return;
 
-            container.innerHTML = "";
+        container.innerHTML = "";
 
-            if (!data || data.length === 0) {
-                container.innerHTML = "<p>No history yet</p>";
-                return;
-            }
+        if (!data || data.length === 0) {
+            container.innerHTML = "<p>No history yet</p>";
+            return;
+        }
 
-            data.forEach(item => {
+        data.forEach(item => {
 
-                let div = document.createElement("div");
-                div.className = "history-item";
+            let div = document.createElement("div");
+            div.className = "history-item";
 
-                let typeText = item.type === "join_bonus"
-                    ? "New Referral Bonus"
-                    : "Referral Bonus";
+            div.innerText =
+                "+" + item.amount +
+                " coins | " +
+                new Date(item.created_at).toLocaleString();
 
-                div.innerText =
-                    "+" + item.amount + " coins | " +
-                    typeText + " | " +
-                    new Date(item.created_at).toLocaleString();
+            container.appendChild(div);
+        });
 
-                container.appendChild(div);
-            });
-
-        })
-        .catch(err => console.log("History error:", err));
+    })
+    .catch(err => console.log("History error:", err));
 }
-
 
 
 const canvas = document.getElementById("particles");

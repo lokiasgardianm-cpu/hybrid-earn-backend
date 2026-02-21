@@ -164,7 +164,10 @@ function verifyTelegramWebApp(initData) {
 
 
 function verifyTelegramUser(req, res, next) {
-  const initData = req.body.initData;
+
+  const initData =
+    req.headers["x-telegram-init-data"] ||
+    req.body?.initData;
 
   if (!initData) {
     return res.status(401).json({ error: "No initData provided" });
