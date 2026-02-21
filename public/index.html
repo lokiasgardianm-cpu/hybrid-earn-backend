@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Hybrid Earn App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <canvas id="particles"></canvas>
+
+
+    <div id="coinBurstContainer"></div>
+
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="app-name">Hybrid Earn</div>
+        <div class="balance">
+            <div id="coinBalance">0 Coins</div>
+            <div id="cashBalance">0 ৳</div>
+        </div>
+    </div>
+
+    <!-- Page Container -->
+    <div class="page-container">
+
+        <div id="home" class="page active">
+
+            <div class="energy-box">
+                <div class="energy-text">
+                    Energy: <span id="energy">100</span>/100
+                </div>
+                <div class="energy-bar">
+                    <div class="energy-fill" id="energyFill"></div>
+                </div>
+            </div>
+
+            <div class="tap-section">
+                <button class="tap-btn" onclick="tapCoin(event)">
+                    TAP
+                </button>
+
+
+
+
+                <div id="tapEffectContainer"></div>
+
+            </div>
+
+
+            <div class="upgrade-section">
+                <h3>Upgrade Tap</h3>
+                <p>Level: <span id="tapLevel">1</span></p>
+                <p>Power: <span id="tapPower">5</span> coin per tap</p>
+                <p>Upgrade Cost: <span id="upgradeCost">500</span> coins</p>
+                <button onclick="upgradeTap()">Upgrade</button>
+            </div>
+
+
+        </div>
+
+        <div id="earn" class="page">
+            <h2>Earn Coins</h2>
+
+            <div class="earn-card" onclick="watchAd()">
+                <h3>📺 Watch Ad</h3>
+                <p>Reward: <span id="adReward">--</span> Coins</p>
+            </div>
+
+            <div class="earn-card" onclick="openShortlink()">
+                <h3>🔗 Shortlink</h3>
+                <p>Reward: <span id="shortlinkReward">--</span> Coins</p>
+            </div>
+
+            <div class="earn-card" onclick="dailyBonus()">
+                <h3>🎁 Daily Bonus</h3>
+                <p>Reward: <span id="dailyReward">--</span> Coins</p>
+            </div>
+
+            <div class="earn-card" onclick="startSpin()">
+                <h3>🎡 Spin Wheel</h3>
+                <p>Try your luck!</p>
+            </div>
+
+
+
+
+            <div id="spinContainer" class="spin-container">
+
+                <div class="pointer"></div>
+
+
+
+                <div class="wheel" id="wheel">
+
+                </div>
+                <button onclick="startSpin()">SPIN</button>
+            </div>
+
+
+
+        </div>
+
+        <div id="invite" class="page">
+            <h2>Invite & Earn</h2>
+
+            <div class="ref-box">
+                <p>Your Referral Link:</p>
+                <input type="text" id="refLink" readonly>
+                <button onclick="copyRef()">Copy Link</button>
+            </div>
+
+            <div class="ref-stats">
+                <p>Total Referrals: <span id="totalRef">0</span></p>
+                <p>Referral Earnings: <span id="refEarn">0</span> coins</p>
+            </div>
+
+
+            <!-- ADD HERE -->
+            <h3>Your Referrals</h3>
+            <div id="refList"></div>
+
+            <h3>Referral History</h3>
+            <div id="refHistory"></div>
+
+
+        </div>
+
+
+
+
+
+
+
+
+        <div id="walletPage" class="page">
+
+            <h2>💰 Wallet</h2>
+
+            <div class="glass-card">
+                <p>Total Coins</p>
+                <h1 id="walletCoinBalance">0</h1>
+            </div>
+
+            <div class="glass-card">
+                <p>Convert Coins to Cash</p>
+                <input type="number" id="convertAmount" placeholder="Enter coin amount">
+                <button onclick="convertCoins()">Convert</button>
+                <p id="convertInfo"></p>
+            </div>
+
+            <div class="glass-card">
+                <p>Withdraw Cash</p>
+                <input type="number" id="withdrawAmount" placeholder="Enter cash amount (৳)">
+                <button onclick="withdrawCash()">Withdraw</button>
+                <p id="withdrawInfo"></p>
+            </div>
+        </div>
+
+    </div>
+
+
+
+
+
+
+
+
+
+    <div id="vip" class="page">VIP Page</div>
+
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <button onclick="showPage('home')">Home</button>
+        <button onclick="showPage('earn')">Earn</button>
+        <button onclick="showPage('invite')">Invite</button>
+        <button onclick="showPage('walletPage')">Wallet</button>
+        <button onclick="showPage('vip')">VIP</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

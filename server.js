@@ -14,14 +14,23 @@ const crypto = require("crypto");
 console.log("🚀 Server Starting...");
 
 const app = express();
-app.use(express.json());
-// Serve frontend
-app.use(express.static(path.join(__dirname, '../hybrid-earn-app')));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../hybrid-earn-app/index.html'));
+app.use(cors({
+  origin: "*",
+}));
+
+app.use(express.json());
+
+// Serve frontend from public folder
+app.use(express.static(path.join(__dirname, "public")));
+
+// Root route
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
-app.use(cors());
+
+
+
 
 // ===== TELEGRAM BOT =====
 const bot = new Telegraf(process.env.BOT_TOKEN);
