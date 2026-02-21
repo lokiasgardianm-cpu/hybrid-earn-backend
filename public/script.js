@@ -96,7 +96,7 @@ function tapCoin(event) {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData,
+            initData: tg ? tg.initData : null,
         })
 
     })
@@ -253,7 +253,7 @@ function watchAd() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                initData: tg.initData
+                initData: tg ? tg.initData : null
             })
 
         })
@@ -284,7 +284,7 @@ function openShortlink() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -318,7 +318,7 @@ function dailyBonus() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -361,7 +361,7 @@ function startSpin() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -523,7 +523,7 @@ function loadUserData() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -578,7 +578,7 @@ function loadReferralList() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -626,7 +626,7 @@ function loadReferralHistory() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData
+            initData: tg ? tg.initData : null
         })
     })
         .then(res => res.json())
@@ -740,7 +740,7 @@ function submitWithdraw() {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            initData: tg.initData,
+            initData: tg ? tg.initData : null,
             amount: amount,
             method: method,
             account_number: account
@@ -781,7 +781,7 @@ function convertCoin() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            initData: tg.initData,
+            initData: tg ? tg.initData : null,
             amount: amount
         })
     })
