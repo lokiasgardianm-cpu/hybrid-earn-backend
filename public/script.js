@@ -97,9 +97,9 @@ function tapCoin(event) {
     fetch("https://hybrid-earn-backend.onrender.com/tap", {
         method: "POST",
         headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null,
         })
@@ -258,9 +258,9 @@ function watchAd() {
         fetch("https://hybrid-earn-backend.onrender.com/reward-ad", {
             method: "POST",
             headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+                "Content-Type": "application/json",
+                "x-telegram-init-data": tg ? tg.initData : ""
+            },
             body: JSON.stringify({
                 initData: tg ? tg.initData : null
             })
@@ -290,9 +290,9 @@ function openShortlink() {
     fetch("https://hybrid-earn-backend.onrender.com/shortlink", {
         method: "POST",
         headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -305,11 +305,10 @@ function openShortlink() {
                 return;
             }
 
-            coins = data.coin_balance;
+            coins += data.reward;   // ✅ FIXED
             updateUI();
 
             alert("🔗 +" + data.reward + " coins");
-
         })
         .catch(err => console.log("Shortlink error:", err));
 }
@@ -325,9 +324,9 @@ function dailyBonus() {
     fetch("https://hybrid-earn-backend.onrender.com/daily", {
         method: "POST",
         headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -340,11 +339,10 @@ function dailyBonus() {
                 return;
             }
 
-            coins = data.coin_balance;
+            coins += data.reward;   // ✅ FIXED
             updateUI();
 
             alert("🎁 You received " + data.reward + " coins!");
-
         })
         .catch(err => console.log("Daily error:", err));
 }
@@ -369,9 +367,9 @@ function startSpin() {
     fetch("https://hybrid-earn-backend.onrender.com/spin", {
         method: "POST",
         headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -387,7 +385,7 @@ function startSpin() {
 
             setTimeout(() => {
 
-                 coins = data.coin_balance; // backend balance
+                coins += data.reward;   // ✅ FIXED
                 updateUI();
                 coinBurst();
 
@@ -396,7 +394,6 @@ function startSpin() {
                 spinning = false;
 
             }, 4000);
-
         })
         .catch(err => {
             console.log("Spin error:", err);
@@ -532,9 +529,9 @@ function loadUserData() {
     fetch("https://hybrid-earn-backend.onrender.com/user", {
         method: "POST",
         headers: {
-    "Content-Type": "application/json",
-    "x-telegram-init-data": tg ? tg.initData : ""
-},
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg ? tg.initData : ""
+        },
         body: JSON.stringify({
             initData: tg ? tg.initData : null
         })
@@ -595,33 +592,33 @@ function loadReferralList() {
             "x-telegram-init-data": tg.initData
         }
     })
-    .then(res => res.json())
-    .then(data => {
+        .then(res => res.json())
+        .then(data => {
 
-        let container = document.getElementById("refList");
-        if (!container) return;
+            let container = document.getElementById("refList");
+            if (!container) return;
 
-        container.innerHTML = "";
+            container.innerHTML = "";
 
-        if (!data || data.length === 0) {
-            container.innerHTML = "<p>No referrals yet</p>";
-            return;
-        }
+            if (!data || data.length === 0) {
+                container.innerHTML = "<p>No referrals yet</p>";
+                return;
+            }
 
-        data.forEach(user => {
+            data.forEach(user => {
 
-            let div = document.createElement("div");
-            div.className = "ref-user";
+                let div = document.createElement("div");
+                div.className = "ref-user";
 
-            div.innerText =
-                (user.username ? "@" + user.username : user.telegram_id) +
-                " | Balance: " + user.coin_balance;
+                div.innerText =
+                    (user.username ? "@" + user.username : user.telegram_id) +
+                    " | Balance: " + user.coin_balance;
 
-            container.appendChild(div);
-        });
+                container.appendChild(div);
+            });
 
-    })
-    .catch(err => console.log("Referral list error:", err));
+        })
+        .catch(err => console.log("Referral list error:", err));
 }
 
 
@@ -640,34 +637,34 @@ function loadReferralHistory() {
             "x-telegram-init-data": tg.initData
         }
     })
-    .then(res => res.json())
-    .then(data => {
+        .then(res => res.json())
+        .then(data => {
 
-        let container = document.getElementById("refHistory");
-        if (!container) return;
+            let container = document.getElementById("refHistory");
+            if (!container) return;
 
-        container.innerHTML = "";
+            container.innerHTML = "";
 
-        if (!data || data.length === 0) {
-            container.innerHTML = "<p>No history yet</p>";
-            return;
-        }
+            if (!data || data.length === 0) {
+                container.innerHTML = "<p>No history yet</p>";
+                return;
+            }
 
-        data.forEach(item => {
+            data.forEach(item => {
 
-            let div = document.createElement("div");
-            div.className = "history-item";
+                let div = document.createElement("div");
+                div.className = "history-item";
 
-            div.innerText =
-                "+" + item.amount +
-                " coins | " +
-                new Date(item.created_at).toLocaleString();
+                div.innerText =
+                    "+" + item.amount +
+                    " coins | " +
+                    new Date(item.created_at).toLocaleString();
 
-            container.appendChild(div);
-        });
+                container.appendChild(div);
+            });
 
-    })
-    .catch(err => console.log("History error:", err));
+        })
+        .catch(err => console.log("History error:", err));
 }
 
 
