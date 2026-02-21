@@ -1,6 +1,6 @@
 console.log("JS Loaded ✅");
 
-alert("TG: " + (window.Telegram ? "YES" : "NO"));
+alert("TG: " + (window.Telegram?.WebApp ? "YES" : "NO"));
 
 
 let tg = null;
