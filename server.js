@@ -1358,7 +1358,17 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
 
 // ================= START SERVER =================
-bot.launch();
+app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
+  bot.handleUpdate(req.body);
+  res.sendStatus(200);
+});
+
+
+if (process.env.RENDER) {
+  console.log("Running on Render with webhook");
+} else {
+  bot.launch();
+}
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
