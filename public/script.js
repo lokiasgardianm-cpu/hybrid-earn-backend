@@ -105,7 +105,6 @@ function tapCoin(event) {
         },
         body: JSON.stringify({
             initData: tg.initData,
-            amount: tapPower
         })
 
     })
@@ -879,73 +878,6 @@ function buildSpinWheel() {
 }
 
 
-
-async function convertCoins() {
-
-    const amount = parseInt(document.getElementById("convertAmount").value);
-
-    if (!amount || amount <= 0) {
-        alert("Enter valid coin amount");
-        return;
-    }
-
-    try {
-
-        const response = await fetch("/convert", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            document.getElementById("convertInfo").innerText =
-                `Converted successfully. Cash: ${data.cash_balance} ৳`;
-
-            loadUserData();
-        } else {
-            alert(data.message);
-        }
-
-    } catch (err) {
-        alert("Conversion failed");
-    }
-}
-
-
-async function withdrawCash() {
-
-    const amount = parseInt(document.getElementById("withdrawAmount").value);
-
-    if (!amount || amount <= 0) {
-        alert("Enter valid cash amount");
-        return;
-    }
-
-    try {
-
-        const response = await fetch("/withdraw", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            document.getElementById("withdrawInfo").innerText =
-                "Withdraw request submitted";
-
-            loadUserData();
-        } else {
-            alert(data.message);
-        }
-
-    } catch (err) {
-        alert("Withdraw failed");
-    }
-}
 
 
 

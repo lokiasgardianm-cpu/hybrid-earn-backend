@@ -382,6 +382,43 @@ async function updateCashWithLedger(
 // ================= API ROUTES =================
 
 
+app.post("/user", verifyTelegramUser, async (req, res) => {
+
+  const client = await pool.connect();
+
+  try {
+
+    const telegramId = req.telegramUser.id.toString();
+
+    const result = await client.query(
+      "SELECT coin_balance, cash_balance, daily_tap_count FROM users WHERE telegram_id=$1",
+      [telegramId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ success: false });
+    }
+
+    res.json({
+      success: true,
+      coin_balance: result.rows[0].coin_balance,
+      cash_balance: result.rows[0].cash_balance,
+      daily_tap_count: result.rows[0].daily_tap_count
+    });
+
+  } catch (err) {
+    console.log("User route error:", err);
+    res.status(500).json({ success: false });
+  } finally {
+    client.release();
+  }
+
+});
+
+
+
+
+
 // ===== TAP ROUTE (CLEAN PG VERSION) =====
 
 // ===== SECURE TAP ROUTE =====
